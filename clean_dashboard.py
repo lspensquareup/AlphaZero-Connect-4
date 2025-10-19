@@ -91,7 +91,7 @@ class GameWindow:
         self.parent = parent
         self.window = tk.Toplevel(parent.root)
         self.window.title("Connect-4 Game Viewer")
-        self.window.geometry("450x650")
+        self.window.geometry("500x600")  # Smaller since controls are integrated
         
         # Handle window closing
         self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
@@ -119,17 +119,46 @@ class GameWindow:
         controls_frame = tk.Frame(self.window)
         controls_frame.pack(pady=10)
         
-        self.step_button = tk.Button(controls_frame, text="▶ Next Move", 
+        # Top row of controls
+        controls_top_frame = tk.Frame(controls_frame)
+        controls_top_frame.pack(pady=5)
+        
+        self.step_button = tk.Button(controls_top_frame, text="▶ Next Move", 
                                    command=self.next_move, state='disabled')
         self.step_button.pack(side='left', padx=5)
         
-        self.auto_button = tk.Button(controls_frame, text="⏯ Auto Play", 
+        self.auto_button = tk.Button(controls_top_frame, text="⏯ Auto Play", 
                                    command=self.toggle_auto_play, state='disabled')
         self.auto_button.pack(side='left', padx=5)
         
-        self.reset_button = tk.Button(controls_frame, text="🔄 Reset", 
+        self.reset_button = tk.Button(controls_top_frame, text="🔄 Reset", 
                                     command=self.reset_game, state='disabled')
         self.reset_button.pack(side='left', padx=5)
+        
+        # Bottom row - Auto-advance control (integrated with game controls)
+        controls_bottom_frame = tk.Frame(controls_frame)
+        controls_bottom_frame.pack(pady=5)
+        
+        # Use a simple boolean instead of tkinter variable
+        self.auto_advance_enabled = True
+        
+        # Auto-advance toggle button (same style as other controls)
+        self.auto_advance_button = tk.Button(controls_bottom_frame, 
+                                           text="✅ Auto-advance: ON", 
+                                           command=self.toggle_auto_advance,
+                                           font=('Arial', 9),
+                                           bg='lightgreen',
+                                           activebackground='green',
+                                           relief='raised',
+                                           bd=2)
+        self.auto_advance_button.pack(side='left', padx=5)
+        
+        # Status label for auto-advance mode
+        self.auto_status_label = tk.Label(controls_bottom_frame, 
+                                        text="Auto-advance enabled", 
+                                        font=('Arial', 9), 
+                                        fg='green')
+        self.auto_status_label.pack(side='left', padx=10)
         
         # Speed control
         speed_frame = tk.Frame(self.window, relief='ridge', bd=1)
@@ -154,43 +183,6 @@ class GameWindow:
         # Update speed display when slider changes
         self.speed_var.trace('w', self.update_speed_display)
         
-        # Auto-advance control
-        auto_frame = tk.Frame(self.window, relief='ridge', bd=1)
-        auto_frame.pack(pady=10, padx=10, fill='x')
-        
-        tk.Label(auto_frame, text="Game Sequence Control:", font=('Arial', 10, 'bold')).pack(pady=2)
-        
-        auto_control_frame = tk.Frame(auto_frame)
-        auto_control_frame.pack(pady=5)
-        
-        # Initialize the checkbox variable before creating the widget
-        self.auto_advance_var = tk.BooleanVar()
-        self.auto_advance_var.set(True)  # Default to auto-advance enabled
-        
-        # Create a more explicit checkbox
-        self.auto_advance_checkbox = tk.Checkbutton(auto_control_frame, 
-                                                   text="Auto-advance to next game",
-                                                   variable=self.auto_advance_var,
-                                                   font=('Arial', 9),
-                                                   command=self.on_auto_advance_changed,
-                                                   onvalue=True,
-                                                   offvalue=False)
-        self.auto_advance_checkbox.pack(side='left', padx=5)
-        
-        self.next_game_button = tk.Button(auto_control_frame, text="➡️ Next Game", 
-                                        command=self.manual_next_game, state='disabled')
-        self.next_game_button.pack(side='left', padx=10)
-        
-        # Status display for auto-advance mode
-        self.auto_status_label = tk.Label(auto_frame, text="Mode: Auto-advance enabled", 
-                                        font=('Arial', 8), fg='green')
-        self.auto_status_label.pack(pady=2)
-        
-        # Test button to check checkbox state
-        self.test_button = tk.Button(auto_frame, text="🔍 Test Checkbox State", 
-                                   command=self.test_checkbox_state, font=('Arial', 8))
-        self.test_button.pack(pady=2)
-        
         # Game state
         self.moves = []
         self.current_move = 0
@@ -203,6 +195,7 @@ class GameWindow:
         self.auto_show_queue = []
         self.current_auto_game = 0
         self.auto_show_active = False
+        self.game_complete = False  # Track if current game is complete
     
     def on_window_close(self):
         """Handle window closing event."""
@@ -225,27 +218,80 @@ class GameWindow:
         speed = self.speed_var.get()
         self.speed_display.config(text=f"Speed: {speed}s per move")
     
-    def test_checkbox_state(self):
-        """Test method to check if checkbox is working."""
-        is_auto = self.auto_advance_var.get()
-        print(f"DEBUG: Checkbox state is: {is_auto}")
-        self.auto_status_label.config(text=f"DEBUG: Checkbox = {is_auto}", fg='blue')
+    def test_toggle_state(self):
+        """Test method to check if toggle is working."""
+        try:
+            print(f"DEBUG: Toggle state is: {self.auto_advance_enabled}")
+            print(f"DEBUG: Toggle button exists: {hasattr(self, 'auto_advance_button')}")
+            
+            # Try to toggle programmatically to test
+            old_state = self.auto_advance_enabled
+            self.toggle_auto_advance()
+            new_state = self.auto_advance_enabled
+            print(f"DEBUG: After toggle, state changed from {old_state} to {new_state}")
+            
+            # Update display
+            self.auto_status_label.config(text=f"DEBUG: Toggled from {old_state} to {new_state}", fg='blue')
+            
+        except Exception as e:
+            print(f"DEBUG: Error in test: {e}")
+            self.auto_status_label.config(text=f"DEBUG: Error - {e}", fg='red')
+    
+    def toggle_auto_advance(self):
+        """Toggle the auto-advance setting."""
+        try:
+            self.auto_advance_enabled = not self.auto_advance_enabled
+            print(f"DEBUG: Toggle clicked! New state: {self.auto_advance_enabled}")
+            
+            if self.auto_advance_enabled:
+                self.auto_advance_button.config(text="✅ Auto-advance: ON", bg='lightgreen')
+                self.auto_status_label.config(text="Auto-advance enabled", fg='green')
+                
+                # If we're in manual mode and game is complete, auto-continue
+                if self.game_complete and self.auto_show_active:
+                    print("DEBUG: Auto-continuing from manual mode")
+                    self.manual_next_game()
+            else:
+                self.auto_advance_button.config(text="⏸️ Auto-advance: OFF", bg='lightcoral')
+                self.auto_status_label.config(text="Manual advance mode", fg='red')
+                
+            # Update button text based on new state
+            self.update_button_text()
+            
+            # Force window update
+            self.window.update()
+            
+        except Exception as e:
+            print(f"DEBUG: Error in toggle: {e}")
+                
+            # Force window update
+            self.window.update()
+            
+        except Exception as e:
+            print(f"DEBUG: Error in toggle: {e}")
     
     def on_auto_advance_changed(self):
         """Called when the auto-advance checkbox is toggled."""
-        is_auto = self.auto_advance_var.get()
-        print(f"DEBUG: Checkbox changed to: {is_auto}")
-        
-        if is_auto:
-            self.auto_status_label.config(text="Mode: Auto-advance enabled", fg='green')
-            self.auto_advance_checkbox.config(text="Auto-advance to next game")
-            # If we're in the middle of a sequence and waiting, continue automatically
-            if hasattr(self, 'next_game_button') and self.next_game_button['state'] == 'normal':
-                self.next_game_button.config(state='disabled')
-                self.manual_next_game()
-        else:
-            self.auto_status_label.config(text="Mode: Manual advance (use Next Game button)", fg='orange')
-            self.auto_advance_checkbox.config(text="Manual advance mode")
+        try:
+            self.auto_advance_enabled = not self.auto_advance_enabled
+            print(f"DEBUG: Toggle clicked! New state: {self.auto_advance_enabled}")
+            
+            if self.auto_advance_enabled:
+                self.auto_advance_button.config(text="✅ Auto-advance: ON", bg='lightgreen')
+                self.auto_status_label.config(text="Auto-advance enabled", fg='green')
+                
+                # If we're in the middle of a sequence and waiting, continue automatically
+                if self.auto_show_active and self.game_complete:
+                    print("DEBUG: Auto-continuing from manual mode")
+                    self.manual_next_game()
+            else:
+                self.auto_advance_button.config(text="⏸️ Auto-advance: OFF", bg='lightcoral')
+                self.auto_status_label.config(text="Manual advance mode", fg='orange')
+                
+            # Force window update
+            self.window.update()
+        except Exception as e:
+            print(f"DEBUG: Error in checkbox callback: {e}")
     
     def manual_next_game(self):
         """Manually advance to the next game."""
@@ -254,7 +300,9 @@ class GameWindow:
             self.current_auto_game += 1
             self.show_next_auto_game()
         else:
-            self.next_game_button.config(state='disabled')
+            self.auto_show_active = False
+            self.step_button.config(state='normal')
+            self.update_button_text()
     
     def show_game(self, moves, player1_name, player2_name, winner):
         """Display a game sequence."""
@@ -264,6 +312,7 @@ class GameWindow:
         self.winner = winner
         self.current_move = 0
         self.auto_playing = False
+        self.game_complete = False  # Reset game complete flag
         
         # Update UI
         self.players_label.config(text=f"Players: {player1_name} vs {player2_name}")
@@ -273,6 +322,9 @@ class GameWindow:
         self.step_button.config(state='normal')
         self.auto_button.config(state='normal', text="⏯ Auto Play")
         self.reset_button.config(state='normal')
+        
+        # Update button text
+        self.update_button_text()
         
         # Reset board
         self.reset_game()
@@ -297,8 +349,8 @@ class GameWindow:
             total_games = len(self.auto_show_queue)
             self.window.title(f"Connect-4 Game Viewer - Game {game_num}/{total_games}")
             
-            # Disable next game button while game is playing
-            self.next_game_button.config(state='disabled')
+            # Disable step button while game is playing
+            self.step_button.config(state='disabled')
             
             # Show the game
             self.show_game(moves, player1_name, player2_name, winner)
@@ -310,7 +362,7 @@ class GameWindow:
         else:
             # All games shown
             self.auto_show_active = False
-            self.next_game_button.config(state='disabled')
+            self.step_button.config(state='normal')
             self.window.title("Connect-4 Game Viewer - All Games Complete")
             self.status_label.config(text="All games displayed!")
     
@@ -318,27 +370,31 @@ class GameWindow:
         """Called when current game finishes playing."""
         print(f"DEBUG: on_game_complete called")
         if self.auto_show_active and self.current_auto_game < len(self.auto_show_queue):
-            is_auto = self.auto_advance_var.get()
-            print(f"DEBUG: Auto-advance setting: {is_auto}")
+            print(f"DEBUG: Auto-advance setting: {self.auto_advance_enabled}")
             
-            if is_auto:
+            if self.auto_advance_enabled:
                 # Auto-advance is enabled, proceed automatically
                 self.status_label.config(text="Game complete! Auto-advancing in 2 seconds...")
                 self.current_auto_game += 1
                 # Wait a bit before showing next game
                 self.window.after(2000, self.show_next_auto_game)
             else:
-                # Manual advance mode, enable the next game button
+                # Manual advance mode, update button and status
                 remaining_games = len(self.auto_show_queue) - self.current_auto_game
-                self.next_game_button.config(state='normal')
+                self.update_button_text()  # This will change to "Next Game"
                 self.status_label.config(text=f"Game complete! {remaining_games} games remaining. Click 'Next Game' to continue.")
                 print(f"DEBUG: Manual mode activated, {remaining_games} games remaining")
         else:
             # No more games or auto-show not active
-            self.next_game_button.config(state='disabled')
+            self.step_button.config(text="▶ Next Move")
     
     def next_move(self):
-        """Show next move."""
+        """Show next move or advance to next game."""
+        # Check if we should advance to next game instead of next move
+        if self.game_complete and self.auto_show_active and not self.auto_advance_enabled:
+            self.manual_next_game()
+            return
+            
         if self.current_move < len(self.moves):
             # Simulate the move
             env = GymnasiumConnectFour()
@@ -357,6 +413,7 @@ class GameWindow:
             current_player = self.player1_name if self.current_move % 2 == 1 else self.player2_name
             if self.current_move < len(self.moves):
                 self.status_label.config(text=f"Move {self.current_move}: {current_player} played column {self.moves[self.current_move-1]}")
+                self.update_button_text()
             else:
                 winner_name = "Draw"
                 if self.winner == 1:
@@ -366,6 +423,8 @@ class GameWindow:
                 self.status_label.config(text=f"Game Over! Winner: {winner_name}")
                 self.auto_playing = False
                 self.auto_button.config(text="⏯ Auto Play")
+                self.game_complete = True
+                self.update_button_text()
                 
                 # Check if this was part of an auto-show sequence
                 if self.auto_show_active:
@@ -376,6 +435,17 @@ class GameWindow:
             # Use speed from slider (convert to milliseconds)
             delay_ms = int(self.speed_var.get() * 1000)
             self.window.after(delay_ms, self.next_move)
+    
+    def update_button_text(self):
+        """Update the step button text based on context."""
+        if self.game_complete and self.auto_show_active and not self.auto_advance_enabled:
+            remaining_games = len(self.auto_show_queue) - self.current_auto_game
+            if remaining_games > 0:
+                self.step_button.config(text="➡️ Next Game")
+            else:
+                self.step_button.config(text="▶ Next Move")
+        else:
+            self.step_button.config(text="▶ Next Move")
     
     def toggle_auto_play(self):
         """Toggle automatic move playing."""
