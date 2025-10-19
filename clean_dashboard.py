@@ -91,7 +91,7 @@ class GameWindow:
         self.parent = parent
         self.window = tk.Toplevel(parent.root)
         self.window.title("Connect-4 Game Viewer")
-        self.window.geometry("400x500")
+        self.window.geometry("450x600")
         
         # Info frame
         info_frame = tk.Frame(self.window)
@@ -128,6 +128,29 @@ class GameWindow:
                                     command=self.reset_game, state='disabled')
         self.reset_button.pack(side='left', padx=5)
         
+        # Speed control
+        speed_frame = tk.Frame(self.window, relief='ridge', bd=1)
+        speed_frame.pack(pady=10, padx=10, fill='x')
+        
+        tk.Label(speed_frame, text="Playback Speed:", font=('Arial', 10, 'bold')).pack(pady=2)
+        
+        speed_control_frame = tk.Frame(speed_frame)
+        speed_control_frame.pack(pady=5)
+        
+        tk.Label(speed_control_frame, text="Fast").pack(side='left', padx=5)
+        self.speed_var = tk.DoubleVar(value=1.0)
+        self.speed_scale = tk.Scale(speed_control_frame, from_=0.2, to=3.0, resolution=0.2,
+                                  orient='horizontal', variable=self.speed_var, length=250)
+        self.speed_scale.pack(side='left', padx=5)
+        tk.Label(speed_control_frame, text="Slow").pack(side='left', padx=5)
+        
+        # Speed display
+        self.speed_display = tk.Label(speed_frame, text="Speed: 1.0s per move", font=('Arial', 9))
+        self.speed_display.pack(pady=2)
+        
+        # Update speed display when slider changes
+        self.speed_var.trace('w', self.update_speed_display)
+        
         # Game state
         self.moves = []
         self.current_move = 0
@@ -135,6 +158,16 @@ class GameWindow:
         self.player1_name = ""
         self.player2_name = ""
         self.winner = 0
+        
+        # Auto-show game state
+        self.auto_show_queue = []
+        self.current_auto_game = 0
+        self.auto_show_active = False
+    
+    def update_speed_display(self, *args):
+        """Update the speed display when slider changes."""
+        speed = self.speed_var.get()
+        self.speed_display.config(text=f"Speed: {speed}s per move")
     
     def show_game(self, moves, player1_name, player2_name, winner):
         """Display a game sequence."""
@@ -156,6 +189,46 @@ class GameWindow:
         
         # Reset board
         self.reset_game()
+    
+    def show_games_sequence(self, games_list):
+        """Show multiple games in sequence automatically."""
+        self.auto_show_queue = games_list.copy()
+        self.current_auto_game = 0
+        self.auto_show_active = True
+        
+        if self.auto_show_queue:
+            self.show_next_auto_game()
+    
+    def show_next_auto_game(self):
+        """Show the next game in the auto-show sequence."""
+        if self.current_auto_game < len(self.auto_show_queue):
+            game_data = self.auto_show_queue[self.current_auto_game]
+            moves, player1_name, player2_name, winner = game_data
+            
+            # Update title to show game number
+            game_num = self.current_auto_game + 1
+            total_games = len(self.auto_show_queue)
+            self.window.title(f"Connect-4 Game Viewer - Game {game_num}/{total_games}")
+            
+            # Show the game
+            self.show_game(moves, player1_name, player2_name, winner)
+            
+            # Start auto-play immediately
+            self.auto_playing = True
+            self.auto_button.config(text="⏸ Pause")
+            self.next_move()
+        else:
+            # All games shown
+            self.auto_show_active = False
+            self.window.title("Connect-4 Game Viewer - All Games Complete")
+            self.status_label.config(text="All games displayed!")
+    
+    def on_game_complete(self):
+        """Called when current game finishes playing."""
+        if self.auto_show_active and self.current_auto_game < len(self.auto_show_queue):
+            self.current_auto_game += 1
+            # Wait a bit before showing next game
+            self.window.after(2000, self.show_next_auto_game)
     
     def next_move(self):
         """Show next move."""
@@ -186,10 +259,16 @@ class GameWindow:
                 self.status_label.config(text=f"Game Over! Winner: {winner_name}")
                 self.auto_playing = False
                 self.auto_button.config(text="⏯ Auto Play")
+                
+                # Check if this was part of an auto-show sequence
+                if self.auto_show_active:
+                    self.on_game_complete()
         
         # Continue auto play if enabled
         if self.auto_playing and self.current_move < len(self.moves):
-            self.window.after(1000, self.next_move)
+            # Use speed from slider (convert to milliseconds)
+            delay_ms = int(self.speed_var.get() * 1000)
+            self.window.after(delay_ms, self.next_move)
     
     def toggle_auto_play(self):
         """Toggle automatic move playing."""
@@ -417,8 +496,16 @@ class WorkingDashboard:
                 self.log("📺 Showing valid Connect-4 demo game...")
                 self.log("  Red plays: columns 2, 3, 4, 5 (horizontal win)")
                 self.log("  Yellow plays: columns 0, 1, 6")
+                
+                # Show single game and start auto-play immediately
                 self.game_window.show_game(moves, "Red Player", "Yellow Player", 1)
-                self.log("✅ Demo game completed!")
+                
+                # Start auto-play automatically
+                self.game_window.auto_playing = True
+                self.game_window.auto_button.config(text="⏸ Pause")
+                self.game_window.next_move()
+                
+                self.log("✅ Demo game started with auto-play!")
             else:
                 self.log("❌ Could not open game window")
                 
@@ -503,19 +590,22 @@ class WorkingDashboard:
                 self.log("❌ Could not open game window")
                 return
             
-            # Generate games with timeout protection
+            # Generate all games first
+            self.log("🎯 Generating all games...")
+            games_data = []
             wins = {player1_agent.name: 0, player2_agent.name: 0, "Tie": 0}
             
             for game_num in range(num_games):
-                self.log(f"🎯 Playing AI game {game_num + 1}/{num_games}...")
+                self.update_status(f"Generating game {game_num + 1}/{num_games}...", 
+                                 int((game_num / num_games) * 100))
+                self.log(f"🎯 Generating game {game_num + 1}/{num_games}...")
                 
                 try:
-                    # Add timeout protection
+                    # Generate game with timeout protection
                     moves, p1_name, p2_name, winner = self.play_ai_game_safe(player1_agent, player2_agent, game_num + 1)
                     
                     if moves:
-                        self.log(f"📝 Game {game_num + 1}: {len(moves)} moves")
-                        self.log(f"  {p1_name} vs {p2_name}")
+                        games_data.append((moves, p1_name, p2_name, winner))
                         
                         # Update win statistics
                         if winner == 1:
@@ -528,15 +618,7 @@ class WorkingDashboard:
                             wins["Tie"] += 1
                             self.log(f"  🤝 Game ended in a tie")
                         
-                        # Show the game
-                        self.log(f"  📺 Displaying game {game_num + 1}...")
-                        self.game_window.show_game(moves, p1_name, p2_name, winner)
-                        self.log(f"  ✅ Game {game_num + 1} displayed")
-                        
-                        # Brief pause between games
-                        if game_num < num_games - 1:
-                            self.log("💤 Pausing before next game...")
-                            time.sleep(1)
+                        self.log(f"  ✅ Game {game_num + 1} generated ({len(moves)} moves)")
                     else:
                         self.log(f"❌ Game {game_num + 1} failed to generate")
                         
@@ -544,11 +626,19 @@ class WorkingDashboard:
                     self.log(f"❌ Error in game {game_num + 1}: {str(e)}")
             
             # Show final statistics
-            self.log("🎉 AI games complete!")
-            self.log(f"📊 Final Results:")
+            self.log("� All games generated! Final Results:")
             for agent, count in wins.items():
                 percentage = (count / num_games) * 100
                 self.log(f"  {agent}: {count}/{num_games} ({percentage:.1f}%)")
+            
+            # Now show all games automatically in sequence
+            if games_data:
+                self.log("🎬 Starting automatic game playback...")
+                self.update_status("Playing games automatically...", 100)
+                self.game_window.show_games_sequence(games_data)
+            else:
+                self.log("❌ No games to display")
+                self.update_status("No games generated", 0)
             
         except Exception as e:
             self.log(f"❌ AI games failed: {str(e)}")
