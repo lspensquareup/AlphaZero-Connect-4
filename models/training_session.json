@@ -1,0 +1,11 @@
+{
+  "policy_losses": [],
+  "value_losses": [],
+  "combined_losses": [],
+  "learning_rates": [],
+  "epochs": 0,
+  "policy_final_loss": 0.9661997748272759,
+  "value_final_loss": 0.10476770877880813,
+  "training_examples": 668,
+  "minimax_games": 50
+}

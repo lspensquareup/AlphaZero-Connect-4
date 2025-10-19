@@ -14,9 +14,11 @@ from typing import List, Tuple, Dict, Optional
 from collections import deque
 import os
 import sys
+import random
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from connect4_env import GymnasiumConnectFour
 
 
 class Trainer:
@@ -291,6 +293,344 @@ class Trainer:
             print(f"Training statistics loaded from {stats_path}")
         else:
             print(f"Training statistics file not found: {stats_path}")
+    
+    def generate_minimax_training_data(self, num_games: int = 100, minimax_depth: int = 4) -> Tuple[List, List]:
+        """
+        Generate training data using minimax agent vs random agent games.
+        
+        Args:
+            num_games: Number of games to simulate
+            minimax_depth: Search depth for minimax agent
+            
+        Returns:
+            Tuple of (policy_data, value_data) for training
+        """
+        # Generate game records
+        game_records = generate_minimax_training_data(num_games, minimax_depth)
+        
+        # Convert to training data
+        policy_data, value_data = self.generate_training_data_from_games(game_records)
+        
+        print(f"Generated {len(policy_data)} training examples from {num_games} games")
+        
+        return policy_data, value_data
+
+
+class MinimaxAgent:
+    """
+    Minimax agent with alpha-beta pruning for Connect-4.
+    
+    This agent uses game tree search to find optimal moves,
+    providing high-quality training data for neural networks.
+    """
+    
+    def __init__(self, depth: int = 5):
+        """
+        Initialize minimax agent.
+        
+        Args:
+            depth: Maximum search depth (higher = stronger but slower)
+        """
+        self.depth = depth
+        self.name = f"Minimax(depth={depth})"
+    
+    def select_action(self, env: GymnasiumConnectFour) -> int:
+        """
+        Select the best action using minimax with alpha-beta pruning.
+        
+        Args:
+            env: Connect-4 environment
+            
+        Returns:
+            Best action (column index)
+        """
+        valid_actions = [i for i in range(7) if env._action_mask()[i] == 1]
+        
+        if not valid_actions:
+            return 0  # Fallback (shouldn't happen)
+        
+        best_action = valid_actions[0]
+        best_value = float('-inf')
+        
+        for action in valid_actions:
+            # Make a copy of the environment to simulate the move
+            env_copy = self._copy_env(env)
+            env_copy.step(action)
+            
+            # Evaluate this move using minimax
+            value = self._minimax(env_copy, self.depth - 1, float('-inf'), float('inf'), False)
+            
+            if value > best_value:
+                best_value = value
+                best_action = action
+        
+        return best_action
+    
+    def _minimax(self, env: GymnasiumConnectFour, depth: int, alpha: float, beta: float, maximizing: bool) -> float:
+        """
+        Minimax algorithm with alpha-beta pruning.
+        
+        Args:
+            env: Game environment
+            depth: Remaining search depth
+            alpha: Alpha value for pruning
+            beta: Beta value for pruning
+            maximizing: True if maximizing player's turn
+            
+        Returns:
+            Evaluated position value
+        """
+        # Check terminal conditions
+        if depth == 0:
+            return self._evaluate_position(env)
+        
+        # Check if game is over
+        terminated = self._is_terminal(env)
+        if terminated:
+            winner = self._get_winner(env)
+            if winner == 1:  # Player 1 wins
+                return 1000 + depth  # Prefer quicker wins
+            elif winner == -1:  # Player -1 wins
+                return -1000 - depth  # Avoid quicker losses
+            else:  # Tie
+                return 0
+        
+        valid_actions = [i for i in range(7) if env._action_mask()[i] == 1]
+        
+        if maximizing:
+            max_eval = float('-inf')
+            for action in valid_actions:
+                env_copy = self._copy_env(env)
+                env_copy.step(action)
+                eval_score = self._minimax(env_copy, depth - 1, alpha, beta, False)
+                max_eval = max(max_eval, eval_score)
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break  # Beta cutoff
+            return max_eval
+        else:
+            min_eval = float('inf')
+            for action in valid_actions:
+                env_copy = self._copy_env(env)
+                env_copy.step(action)
+                eval_score = self._minimax(env_copy, depth - 1, alpha, beta, True)
+                min_eval = min(min_eval, eval_score)
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break  # Alpha cutoff
+            return min_eval
+    
+    def _evaluate_position(self, env: GymnasiumConnectFour) -> float:
+        """
+        Evaluate a board position heuristically.
+        
+        Args:
+            env: Game environment
+            
+        Returns:
+            Position evaluation score
+        """
+        board = env.board
+        score = 0
+        
+        # Check all possible 4-in-a-row positions
+        for row in range(6):
+            for col in range(7):
+                # Horizontal
+                if col <= 3:
+                    window = board[row, col:col+4]
+                    score += self._evaluate_window(window)
+                
+                # Vertical
+                if row <= 2:
+                    window = board[row:row+4, col]
+                    score += self._evaluate_window(window)
+                
+                # Diagonal (positive slope)
+                if row <= 2 and col <= 3:
+                    window = [board[row+i, col+i] for i in range(4)]
+                    score += self._evaluate_window(np.array(window))
+                
+                # Diagonal (negative slope)
+                if row >= 3 and col <= 3:
+                    window = [board[row-i, col+i] for i in range(4)]
+                    score += self._evaluate_window(np.array(window))
+        
+        return score
+    
+    def _evaluate_window(self, window: np.ndarray) -> float:
+        """
+        Evaluate a 4-piece window.
+        
+        Args:
+            window: Array of 4 board positions
+            
+        Returns:
+            Window evaluation score
+        """
+        score = 0
+        player1_count = np.sum(window == 1)
+        player2_count = np.sum(window == -1)
+        empty_count = np.sum(window == 0)
+        
+        # Can't have both players in the same window
+        if player1_count > 0 and player2_count > 0:
+            return 0
+        
+        # Score for player 1
+        if player1_count == 4:
+            score += 100
+        elif player1_count == 3 and empty_count == 1:
+            score += 10
+        elif player1_count == 2 and empty_count == 2:
+            score += 2
+        
+        # Score for player -1
+        if player2_count == 4:
+            score -= 100
+        elif player2_count == 3 and empty_count == 1:
+            score -= 10
+        elif player2_count == 2 and empty_count == 2:
+            score -= 2
+        
+        return score
+    
+    def _copy_env(self, env: GymnasiumConnectFour) -> GymnasiumConnectFour:
+        """Create a copy of the environment."""
+        new_env = GymnasiumConnectFour()
+        new_env.board = env.board.copy()
+        new_env.current_player = env.current_player
+        return new_env
+    
+    def _is_terminal(self, env: GymnasiumConnectFour) -> bool:
+        """Check if the game is in a terminal state."""
+        # Check if board is full
+        if np.all(env.board != 0):
+            return True
+        
+        # Check for wins (simplified check)
+        board = env.board
+        for row in range(6):
+            for col in range(7):
+                if board[row, col] != 0:
+                    if env.check_win(row, col):
+                        return True
+        
+        return False
+    
+    def _get_winner(self, env: GymnasiumConnectFour) -> int:
+        """Get the winner of the game (1, -1, or 0 for tie)."""
+        board = env.board
+        for row in range(6):
+            for col in range(7):
+                if board[row, col] != 0:
+                    if env.check_win(row, col):
+                        return board[row, col]
+        return 0  # Tie
+
+
+class RandomAgent:
+    """Simple random agent for testing."""
+    
+    def __init__(self):
+        self.name = "Random"
+    
+    def select_action(self, env: GymnasiumConnectFour) -> int:
+        """Select a random valid action."""
+        valid_actions = [i for i in range(7) if env._action_mask()[i] == 1]
+        return random.choice(valid_actions) if valid_actions else 0
+
+
+def generate_minimax_training_data(num_games: int = 100, minimax_depth: int = 4) -> List[Dict]:
+    """
+    Generate training data by playing games between minimax and random agents.
+    
+    Args:
+        num_games: Number of games to play
+        minimax_depth: Depth for minimax search
+        
+    Returns:
+        List of game records with board states, actions, and outcomes
+    """
+    print(f"Generating training data from {num_games} games (Minimax depth={minimax_depth})...")
+    
+    minimax_agent = MinimaxAgent(depth=minimax_depth)
+    random_agent = RandomAgent()
+    
+    game_records = []
+    
+    for game_num in range(num_games):
+        if (game_num + 1) % 20 == 0:
+            print(f"Playing game {game_num + 1}/{num_games}")
+        
+        env = GymnasiumConnectFour()
+        env.reset()
+        
+        # Randomly decide which agent goes first
+        minimax_is_player1 = random.choice([True, False])
+        
+        board_states = []
+        actions = []
+        
+        terminated = False
+        winner = 0
+        
+        while not terminated:
+            current_board = env.board.copy()
+            
+            # Choose action based on current player
+            if (env.current_player == 1 and minimax_is_player1) or \
+               (env.current_player == -1 and not minimax_is_player1):
+                # Minimax agent's turn
+                action = minimax_agent.select_action(env)
+            else:
+                # Random agent's turn
+                action = random_agent.select_action(env)
+            
+            # Store the board state and action
+            board_states.append(current_board)
+            actions.append(action)
+            
+            # Make the move
+            _, reward, terminated, _, info, _ = env.step(action)
+            
+            # Check game outcome
+            if terminated:
+                if info.get("reason") == "Win":
+                    winner = info.get("winner", 0)
+                elif info.get("reason") == "Tie":
+                    winner = 0
+                else:  # Illegal move (shouldn't happen with proper agents)
+                    winner = 0
+        
+        # Store game record
+        game_record = {
+            'board_states': board_states,
+            'actions': actions,
+            'winner': winner,
+            'minimax_is_player1': minimax_is_player1,
+            'num_moves': len(actions)
+        }
+        game_records.append(game_record)
+    
+    print(f"Generated {len(game_records)} games")
+    
+    # Print some statistics
+    wins_as_player1 = sum(1 for g in game_records if g['winner'] == 1)
+    wins_as_player2 = sum(1 for g in game_records if g['winner'] == -1)
+    ties = sum(1 for g in game_records if g['winner'] == 0)
+    
+    minimax_wins = 0
+    for game in game_records:
+        if game['winner'] == 1 and game['minimax_is_player1']:
+            minimax_wins += 1
+        elif game['winner'] == -1 and not game['minimax_is_player1']:
+            minimax_wins += 1
+    
+    print(f"Results: Player 1 wins: {wins_as_player1}, Player -1 wins: {wins_as_player2}, Ties: {ties}")
+    print(f"Minimax wins: {minimax_wins}/{num_games} ({100*minimax_wins/num_games:.1f}%)")
+    
+    return game_records
 
 
 def create_sample_training_data(num_samples: int = 1000) -> Tuple[List, List]:
