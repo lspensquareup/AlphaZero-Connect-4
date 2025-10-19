@@ -274,6 +274,115 @@ class Trainer:
         
         return results
     
+    def evaluate_agent_vs_baseline(self, agent, baseline_agent=None, num_games: int = 10) -> Dict:
+        """
+        Evaluate an agent against a baseline (default: random agent).
+        
+        Args:
+            agent: Agent to evaluate (can be PolicyAgent, ValueAgent, etc.)
+            baseline_agent: Baseline agent (default: RandomAgent)
+            num_games: Number of games to play
+            
+        Returns:
+            Dictionary with win rate statistics
+        """
+        print(f"Evaluating agent vs baseline over {num_games} games...")
+        
+        if baseline_agent is None:
+            from agents.random_agent import RandomAgent
+            baseline_agent = RandomAgent("Random Baseline")
+        
+        # Play games
+        wins = 0
+        losses = 0
+        ties = 0
+        
+        for game_num in range(num_games):
+            # Alternate who goes first
+            if game_num % 2 == 0:
+                player1, player2 = agent, baseline_agent
+            else:
+                player1, player2 = baseline_agent, agent
+            
+            winner = self._play_single_evaluation_game(player1, player2)
+            
+            # Count results from agent's perspective
+            if winner == 0:
+                ties += 1
+            elif (winner == 1 and player1 == agent) or (winner == -1 and player2 == agent):
+                wins += 1
+            else:
+                losses += 1
+        
+        win_rate = wins / num_games
+        
+        results = {
+            'wins': wins,
+            'losses': losses,
+            'ties': ties,
+            'total_games': num_games,
+            'win_rate': win_rate,
+            'agent_name': agent.name,
+            'baseline_name': baseline_agent.name
+        }
+        
+        print(f"Results: {wins}W-{losses}L-{ties}T (Win rate: {win_rate:.2%})")
+        return results
+    
+    def _play_single_evaluation_game(self, player1, player2):
+        """Play a single game for evaluation purposes."""
+        try:
+            from connect4_env import GymnasiumConnectFour
+            env = GymnasiumConnectFour()
+            env.reset()
+            
+            terminated = False
+            max_moves = 42
+            move_count = 0
+            
+            while not terminated and move_count < max_moves:
+                # Get current player
+                current_agent = player1 if env.current_player == 1 else player2
+                
+                # Get action using the unified interface
+                try:
+                    # Try neural network interface first
+                    if hasattr(current_agent, 'set_player_id'):
+                        current_agent.set_player_id(env.current_player)
+                    
+                    board = env.board.copy()
+                    action_mask = env._action_mask()
+                    action = current_agent.select_action(board, action_mask)
+                except TypeError:
+                    # Fallback to environment interface
+                    action = current_agent.select_action(env)
+                
+                # Make move
+                step_result = env.step(action)
+                if len(step_result) == 6:
+                    _, reward, terminated, _, info, _ = step_result
+                elif len(step_result) == 5:
+                    _, reward, terminated, _, info = step_result
+                else:
+                    _, reward, terminated, info = step_result
+                
+                move_count += 1
+                
+                # Check for winner
+                if terminated:
+                    if 'winner' in info:
+                        return info['winner']
+                    elif reward != 0:
+                        return env.current_player * -1  # Previous player won
+                    else:
+                        return 0  # Tie
+            
+            return 0  # Tie if max moves reached
+            
+        except Exception as e:
+            print(f"Error in evaluation game: {e}")
+            return 0  # Treat as tie
+    
     def save_training_stats(self, filename: str):
         """Save training statistics to file."""
         import json
