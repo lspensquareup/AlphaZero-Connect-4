@@ -91,7 +91,10 @@ class GameWindow:
         self.parent = parent
         self.window = tk.Toplevel(parent.root)
         self.window.title("Connect-4 Game Viewer")
-        self.window.geometry("450x600")
+        self.window.geometry("450x650")
+        
+        # Handle window closing
+        self.window.protocol("WM_DELETE_WINDOW", self.on_window_close)
         
         # Info frame
         info_frame = tk.Frame(self.window)
@@ -151,6 +154,43 @@ class GameWindow:
         # Update speed display when slider changes
         self.speed_var.trace('w', self.update_speed_display)
         
+        # Auto-advance control
+        auto_frame = tk.Frame(self.window, relief='ridge', bd=1)
+        auto_frame.pack(pady=10, padx=10, fill='x')
+        
+        tk.Label(auto_frame, text="Game Sequence Control:", font=('Arial', 10, 'bold')).pack(pady=2)
+        
+        auto_control_frame = tk.Frame(auto_frame)
+        auto_control_frame.pack(pady=5)
+        
+        # Initialize the checkbox variable before creating the widget
+        self.auto_advance_var = tk.BooleanVar()
+        self.auto_advance_var.set(True)  # Default to auto-advance enabled
+        
+        # Create a more explicit checkbox
+        self.auto_advance_checkbox = tk.Checkbutton(auto_control_frame, 
+                                                   text="Auto-advance to next game",
+                                                   variable=self.auto_advance_var,
+                                                   font=('Arial', 9),
+                                                   command=self.on_auto_advance_changed,
+                                                   onvalue=True,
+                                                   offvalue=False)
+        self.auto_advance_checkbox.pack(side='left', padx=5)
+        
+        self.next_game_button = tk.Button(auto_control_frame, text="➡️ Next Game", 
+                                        command=self.manual_next_game, state='disabled')
+        self.next_game_button.pack(side='left', padx=10)
+        
+        # Status display for auto-advance mode
+        self.auto_status_label = tk.Label(auto_frame, text="Mode: Auto-advance enabled", 
+                                        font=('Arial', 8), fg='green')
+        self.auto_status_label.pack(pady=2)
+        
+        # Test button to check checkbox state
+        self.test_button = tk.Button(auto_frame, text="🔍 Test Checkbox State", 
+                                   command=self.test_checkbox_state, font=('Arial', 8))
+        self.test_button.pack(pady=2)
+        
         # Game state
         self.moves = []
         self.current_move = 0
@@ -164,10 +204,57 @@ class GameWindow:
         self.current_auto_game = 0
         self.auto_show_active = False
     
+    def on_window_close(self):
+        """Handle window closing event."""
+        try:
+            # Stop any ongoing auto-play
+            self.auto_playing = False
+            self.auto_show_active = False
+            
+            # Clear parent reference
+            if self.parent:
+                self.parent.game_window = None
+            
+            # Destroy the window
+            self.window.destroy()
+        except Exception as e:
+            print(f"DEBUG: Error closing window: {e}")
+    
     def update_speed_display(self, *args):
         """Update the speed display when slider changes."""
         speed = self.speed_var.get()
         self.speed_display.config(text=f"Speed: {speed}s per move")
+    
+    def test_checkbox_state(self):
+        """Test method to check if checkbox is working."""
+        is_auto = self.auto_advance_var.get()
+        print(f"DEBUG: Checkbox state is: {is_auto}")
+        self.auto_status_label.config(text=f"DEBUG: Checkbox = {is_auto}", fg='blue')
+    
+    def on_auto_advance_changed(self):
+        """Called when the auto-advance checkbox is toggled."""
+        is_auto = self.auto_advance_var.get()
+        print(f"DEBUG: Checkbox changed to: {is_auto}")
+        
+        if is_auto:
+            self.auto_status_label.config(text="Mode: Auto-advance enabled", fg='green')
+            self.auto_advance_checkbox.config(text="Auto-advance to next game")
+            # If we're in the middle of a sequence and waiting, continue automatically
+            if hasattr(self, 'next_game_button') and self.next_game_button['state'] == 'normal':
+                self.next_game_button.config(state='disabled')
+                self.manual_next_game()
+        else:
+            self.auto_status_label.config(text="Mode: Manual advance (use Next Game button)", fg='orange')
+            self.auto_advance_checkbox.config(text="Manual advance mode")
+    
+    def manual_next_game(self):
+        """Manually advance to the next game."""
+        print(f"DEBUG: manual_next_game called")
+        if self.auto_show_active and self.current_auto_game < len(self.auto_show_queue):
+            self.current_auto_game += 1
+            self.show_next_auto_game()
+        else:
+            self.next_game_button.config(state='disabled')
     
     def show_game(self, moves, player1_name, player2_name, winner):
         """Display a game sequence."""
@@ -210,6 +297,9 @@ class GameWindow:
             total_games = len(self.auto_show_queue)
             self.window.title(f"Connect-4 Game Viewer - Game {game_num}/{total_games}")
             
+            # Disable next game button while game is playing
+            self.next_game_button.config(state='disabled')
+            
             # Show the game
             self.show_game(moves, player1_name, player2_name, winner)
             
@@ -220,15 +310,32 @@ class GameWindow:
         else:
             # All games shown
             self.auto_show_active = False
+            self.next_game_button.config(state='disabled')
             self.window.title("Connect-4 Game Viewer - All Games Complete")
             self.status_label.config(text="All games displayed!")
     
     def on_game_complete(self):
         """Called when current game finishes playing."""
+        print(f"DEBUG: on_game_complete called")
         if self.auto_show_active and self.current_auto_game < len(self.auto_show_queue):
-            self.current_auto_game += 1
-            # Wait a bit before showing next game
-            self.window.after(2000, self.show_next_auto_game)
+            is_auto = self.auto_advance_var.get()
+            print(f"DEBUG: Auto-advance setting: {is_auto}")
+            
+            if is_auto:
+                # Auto-advance is enabled, proceed automatically
+                self.status_label.config(text="Game complete! Auto-advancing in 2 seconds...")
+                self.current_auto_game += 1
+                # Wait a bit before showing next game
+                self.window.after(2000, self.show_next_auto_game)
+            else:
+                # Manual advance mode, enable the next game button
+                remaining_games = len(self.auto_show_queue) - self.current_auto_game
+                self.next_game_button.config(state='normal')
+                self.status_label.config(text=f"Game complete! {remaining_games} games remaining. Click 'Next Game' to continue.")
+                print(f"DEBUG: Manual mode activated, {remaining_games} games remaining")
+        else:
+            # No more games or auto-show not active
+            self.next_game_button.config(state='disabled')
     
     def next_move(self):
         """Show next move."""
@@ -392,7 +499,7 @@ class WorkingDashboard:
         ttk.Button(button_frame, text="🚀 Start Training", command=self.start_training).pack(side='left', padx=5)
         ttk.Button(button_frame, text="🔄 Iterative Training", command=self.start_iterative_training).pack(side='left', padx=5)
         ttk.Button(button_frame, text="📊 Update Charts", command=self.update_charts).pack(side='left', padx=5)
-        ttk.Button(button_frame, text="🎬 Open Game Viewer", command=self.open_game_window).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="🎬 Open Game Viewer", command=self.manual_open_game_window).pack(side='left', padx=5)
         
         # Status
         self.status_var = tk.StringVar(value="Ready to start")
@@ -478,11 +585,52 @@ class WorkingDashboard:
             self.progress['value'] = progress
         self.root.update()
     
+    def manual_open_game_window(self):
+        """Open game viewer manually with demo game loaded."""
+        self.manual_open = True
+        self.open_game_window()
+    
+    def auto_load_demo(self):
+        """Automatically load the demo game when game viewer is manually opened."""
+        try:
+            if self.game_window:
+                # Valid Connect-4 game where red wins with 4 in a row horizontally
+                moves = [2, 0, 3, 1, 4, 6, 5]  # Red: 2,3,4,5 (horizontal win) | Yellow: 0,1,6
+                self.log("🎬 Loading demo game in viewer...")
+                self.log("  Demo: Red wins with horizontal line (columns 2,3,4,5)")
+                
+                # Show the game but don't auto-start it
+                self.game_window.show_game(moves, "Red Player (Demo)", "Yellow Player (Demo)", 1)
+                self.log("✅ Demo game loaded! Use controls to play/pause.")
+        except Exception as e:
+            self.log(f"❌ Failed to load demo: {str(e)}")
+    
     def open_game_window(self):
         """Open game visualization window."""
-        if self.game_window is None:
+        # Check if game window exists and is still valid
+        if self.game_window is None or not hasattr(self.game_window, 'window') or not self.game_window.window.winfo_exists():
             self.game_window = GameWindow(self)
             self.log("Game viewer opened")
+            
+            # Automatically load the demo game when manually opening the viewer
+            if hasattr(self, 'manual_open') and self.manual_open:
+                self.auto_load_demo()
+                self.manual_open = False
+        else:
+            # Window exists, just bring it to front
+            try:
+                self.game_window.window.lift()
+                self.game_window.window.focus_force()
+                self.log("Game viewer brought to front")
+            except tk.TclError:
+                # Window was destroyed, create new one
+                self.game_window = GameWindow(self)
+                self.log("Game viewer recreated")
+                
+                # Auto-load demo for recreated window too
+                if hasattr(self, 'manual_open') and self.manual_open:
+                    self.auto_load_demo()
+                    self.manual_open = False
     
     def single_demo(self):
         """Show a single demo game with a valid Connect-4 winning sequence."""
@@ -589,6 +737,19 @@ class WorkingDashboard:
             if not self.game_window:
                 self.log("❌ Could not open game window")
                 return
+            
+            # Additional check to make sure window is valid
+            try:
+                if not self.game_window.window.winfo_exists():
+                    self.log("❌ Game window is not valid")
+                    self.game_window = None
+                    return
+            except (AttributeError, tk.TclError):
+                self.log("❌ Game window error, recreating...")
+                self.game_window = GameWindow(self)
+                if not self.game_window:
+                    self.log("❌ Failed to recreate game window")
+                    return
             
             # Generate all games first
             self.log("🎯 Generating all games...")
