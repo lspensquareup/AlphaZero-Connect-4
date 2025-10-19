@@ -15,6 +15,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from training.trainer import Trainer, generate_minimax_training_data
 from networks.policy_network import PolicyNetwork
 from networks.value_network import ValueNetwork
+from agents.minimax_agent import MinimaxAgent
+from agents.random_agent import RandomAgent
 
 
 def test_minimax_data_generation():

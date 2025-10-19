@@ -22,9 +22,27 @@ class RandomAgent(BaseAgent):
         super().__init__(name)
         self.rng = np.random.RandomState(seed)
     
-    def select_action(self, board: np.ndarray, action_mask: np.ndarray) -> int:
+    def select_action(self, env) -> int:
         """
         Select a random valid action.
+        
+        Args:
+            env: Connect-4 environment (GymnasiumConnectFour)
+            
+        Returns:
+            Randomly selected valid column (0-6)
+        """
+        valid_actions = [i for i in range(7) if env._action_mask()[i] == 1]
+        
+        if len(valid_actions) == 0:
+            # Shouldn't happen, but fallback to column 0
+            return 0
+        
+        return self.rng.choice(valid_actions)
+    
+    def select_action_legacy(self, board: np.ndarray, action_mask: np.ndarray) -> int:
+        """
+        Legacy method for backward compatibility.
         
         Args:
             board: 6x7 board state (unused by random agent)

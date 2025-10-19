@@ -10,7 +10,9 @@ import os
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from training.trainer import generate_minimax_training_data, MinimaxAgent, RandomAgent
+from training.trainer import generate_minimax_training_data
+from agents.minimax_agent import MinimaxAgent
+from agents.random_agent import RandomAgent
 from connect4_env import GymnasiumConnectFour
 
 
