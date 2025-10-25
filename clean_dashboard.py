@@ -489,7 +489,9 @@ class WorkingDashboard:
             'policy_vs_minimax': [],
             'value_vs_minimax': [],
             'policy_vs_mcts': [],
-            'value_vs_mcts': []
+            'value_vs_mcts': [],
+            'policy_losses': [],
+            'value_losses': []
         }
         
         # Trained networks storage
@@ -1096,7 +1098,9 @@ class WorkingDashboard:
                 'policy_vs_minimax': [],
                 'value_vs_minimax': [],
                 'policy_vs_mcts': [],
-                'value_vs_mcts': []
+                'value_vs_mcts': [],
+                'policy_losses': [],
+                'value_losses': []
             }
             
             # Training loop
@@ -1161,6 +1165,8 @@ class WorkingDashboard:
                     self.evaluation_data['value_vs_minimax'].append(value_vs_minimax['win_rate'])
                     self.evaluation_data['policy_vs_mcts'].append(policy_vs_mcts['win_rate'])
                     self.evaluation_data['value_vs_mcts'].append(value_vs_mcts['win_rate'])
+                    self.evaluation_data['policy_losses'].append(policy_results['final_loss'])
+                    self.evaluation_data['value_losses'].append(value_results['final_loss'])
                     
                     self.log(f"📊 Policy vs Random: {policy_vs_random['win_rate']:.2%}")
                     self.log(f"📊 Value vs Random: {value_vs_random['win_rate']:.2%}")
@@ -1257,13 +1263,16 @@ class WorkingDashboard:
                    ha='center', va='center', fontsize=16, transform=ax.transAxes)
             ax.set_title('Evaluation Metrics')
         else:
-            # Create subplots (3x2 layout to include MCTS)
-            ax1 = self.eval_fig.add_subplot(3, 2, 1)
-            ax2 = self.eval_fig.add_subplot(3, 2, 2)
-            ax3 = self.eval_fig.add_subplot(3, 2, 3)
-            ax4 = self.eval_fig.add_subplot(3, 2, 4)
-            ax5 = self.eval_fig.add_subplot(3, 2, 5)
-            ax6 = self.eval_fig.add_subplot(3, 2, 6)
+            # Create subplots (3x3 layout to include loss curves)
+            ax1 = self.eval_fig.add_subplot(3, 3, 1)
+            ax2 = self.eval_fig.add_subplot(3, 3, 2)
+            ax3 = self.eval_fig.add_subplot(3, 3, 3)
+            ax4 = self.eval_fig.add_subplot(3, 3, 4)
+            ax5 = self.eval_fig.add_subplot(3, 3, 5)
+            ax6 = self.eval_fig.add_subplot(3, 3, 6)
+            ax7 = self.eval_fig.add_subplot(3, 3, 7)
+            ax8 = self.eval_fig.add_subplot(3, 3, 8)
+            ax9 = self.eval_fig.add_subplot(3, 3, 9)
             
             iterations = self.evaluation_data['iterations']
             
@@ -1345,6 +1354,35 @@ class WorkingDashboard:
                 ax6.set_ylim(0, 1)
                 ax6.legend()
                 ax6.grid(True, alpha=0.3)
+            
+            # Policy Loss Curve
+            if self.evaluation_data['policy_losses']:
+                ax7.plot(iterations, self.evaluation_data['policy_losses'], 'b-o', linewidth=2)
+                ax7.set_title('Policy Network Loss')
+                ax7.set_xlabel('Iteration')
+                ax7.set_ylabel('Loss')
+                ax7.grid(True, alpha=0.3)
+                ax7.set_yscale('log')  # Log scale for better loss visualization
+            
+            # Value Loss Curve
+            if self.evaluation_data['value_losses']:
+                ax8.plot(iterations, self.evaluation_data['value_losses'], 'r-o', linewidth=2)
+                ax8.set_title('Value Network Loss')
+                ax8.set_xlabel('Iteration')
+                ax8.set_ylabel('Loss')
+                ax8.grid(True, alpha=0.3)
+                ax8.set_yscale('log')  # Log scale for better loss visualization
+            
+            # Combined Loss Comparison
+            if self.evaluation_data['policy_losses'] and self.evaluation_data['value_losses']:
+                ax9.plot(iterations, self.evaluation_data['policy_losses'], 'b-o', label='Policy', linewidth=2)
+                ax9.plot(iterations, self.evaluation_data['value_losses'], 'r-s', label='Value', linewidth=2)
+                ax9.set_title('Combined Loss Comparison')
+                ax9.set_xlabel('Iteration')
+                ax9.set_ylabel('Loss')
+                ax9.set_yscale('log')  # Log scale for better loss visualization
+                ax9.legend()
+                ax9.grid(True, alpha=0.3)
         
         self.eval_fig.tight_layout()
         self.eval_canvas.draw()
