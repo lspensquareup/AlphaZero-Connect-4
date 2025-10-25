@@ -42,6 +42,13 @@ class PolicyAgent(BaseAgent):
         self.network = network
         self.network.eval()
     
+    @property
+    def device(self):
+        """Get the device of the network."""
+        if self.network is not None and hasattr(self.network, 'parameters'):
+            return next(self.network.parameters()).device
+        return torch.device('cpu')
+    
     def set_temperature(self, temperature: float):
         """Set temperature for action selection (higher = more random)."""
         self.temperature = temperature
@@ -65,11 +72,11 @@ class PolicyAgent(BaseAgent):
         # Prepare input for network
         # Adjust board perspective for current player
         player_board = board * self.player_id
-        board_tensor = torch.FloatTensor(player_board).unsqueeze(0)  # Add batch dimension
+        board_tensor = torch.FloatTensor(player_board).unsqueeze(0).to(self.device)  # Move to device
         
         with torch.no_grad():
             action_probs = self.network(board_tensor)
-            action_probs = action_probs.squeeze(0)  # Remove batch dimension
+            action_probs = action_probs.squeeze(0).cpu()  # Move back to CPU for operations
         
         # Apply action mask (set invalid actions to very low probability)
         masked_probs = action_probs.clone()
@@ -101,11 +108,11 @@ class PolicyAgent(BaseAgent):
         
         # Adjust board perspective for current player
         player_board = board * self.player_id
-        board_tensor = torch.FloatTensor(player_board).unsqueeze(0)
+        board_tensor = torch.FloatTensor(player_board).unsqueeze(0).to(self.device)  # Move to device
         
         with torch.no_grad():
             action_probs = self.network(board_tensor)
-            action_probs = action_probs.squeeze(0)
+            action_probs = action_probs.squeeze(0).cpu()  # Move back to CPU
         
         # Apply action mask
         masked_probs = action_probs.clone()

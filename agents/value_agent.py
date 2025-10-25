@@ -41,6 +41,13 @@ class ValueAgent(BaseAgent):
         self.network = network
         self.network.eval()
     
+    @property
+    def device(self):
+        """Get the device of the network."""
+        if self.network is not None and hasattr(self.network, 'parameters'):
+            return next(self.network.parameters()).device
+        return torch.device('cpu')
+    
     def set_lookahead_depth(self, depth: int):
         """Set how many moves to look ahead when evaluating positions."""
         self.lookahead_depth = max(1, depth)
@@ -61,11 +68,11 @@ class ValueAgent(BaseAgent):
         
         # Adjust board perspective for current player
         player_board = board * self.player_id
-        board_tensor = torch.FloatTensor(player_board).unsqueeze(0)
+        board_tensor = torch.FloatTensor(player_board).unsqueeze(0).to(self.device)  # Move to device
         
         with torch.no_grad():
             value = self.network(board_tensor)
-            return value.item()
+            return value.cpu().item()  # Move back to CPU for scalar extraction
     
     def select_action(self, board: np.ndarray, action_mask: np.ndarray) -> int:
         """
