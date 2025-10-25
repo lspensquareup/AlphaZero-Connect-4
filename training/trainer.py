@@ -55,7 +55,7 @@ class Trainer:
     
     def train_policy_network(self, network, training_data: List[Tuple], 
                            num_epochs: int = 100, batch_size: int = 32,
-                           learning_rate: float = 0.001) -> Dict:
+                           learning_rate: float = 0.001, device: torch.device = None) -> Dict:
         """
         Train a policy network using supervised learning.
         
@@ -65,11 +65,18 @@ class Trainer:
             num_epochs: Number of training epochs
             batch_size: Batch size for training
             learning_rate: Learning rate for optimizer
+            device: Device to use for training (CPU, CUDA, MPS)
             
         Returns:
             Training statistics dictionary
         """
+        if device is None:
+            device = torch.device('cpu')
+            
         print(f"Training policy network for {num_epochs} epochs...")
+        
+        # Move network to device
+        network = network.to(device)
         
         # Setup optimizer and loss function
         optimizer = optim.Adam(network.parameters(), lr=learning_rate)
@@ -87,8 +94,8 @@ class Trainer:
                 batch = training_data[i:i + batch_size]
                 
                 # Prepare batch data
-                boards = torch.FloatTensor([item[0] for item in batch])
-                target_probs = torch.FloatTensor([item[1] for item in batch])
+                boards = torch.FloatTensor([item[0] for item in batch]).to(device)
+                target_probs = torch.FloatTensor([item[1] for item in batch]).to(device)
                 
                 # Forward pass
                 optimizer.zero_grad()
@@ -124,7 +131,7 @@ class Trainer:
     
     def train_value_network(self, network, training_data: List[Tuple],
                           num_epochs: int = 100, batch_size: int = 32,
-                          learning_rate: float = 0.001) -> Dict:
+                          learning_rate: float = 0.001, device: torch.device = None) -> Dict:
         """
         Train a value network using supervised learning.
         
@@ -134,11 +141,18 @@ class Trainer:
             num_epochs: Number of training epochs
             batch_size: Batch size for training
             learning_rate: Learning rate for optimizer
+            device: Device to use for training (CPU, CUDA, MPS)
             
         Returns:
             Training statistics dictionary
         """
+        if device is None:
+            device = torch.device('cpu')
+            
         print(f"Training value network for {num_epochs} epochs...")
+        
+        # Move network to device
+        network = network.to(device)
         
         # Setup optimizer and loss function
         optimizer = optim.Adam(network.parameters(), lr=learning_rate)
@@ -156,8 +170,8 @@ class Trainer:
                 batch = training_data[i:i + batch_size]
                 
                 # Prepare batch data
-                boards = torch.FloatTensor([item[0] for item in batch])
-                target_values = torch.FloatTensor([[item[1]] for item in batch])
+                boards = torch.FloatTensor([item[0] for item in batch]).to(device)
+                target_values = torch.FloatTensor([[item[1]] for item in batch]).to(device)
                 
                 # Forward pass
                 optimizer.zero_grad()

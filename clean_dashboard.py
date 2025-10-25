@@ -27,6 +27,22 @@ from agents.value_agent import ValueAgent
 from agents.mcts_agent import MCTSAgent
 
 
+def get_device():
+    """Get the best available device (MPS for Apple Silicon, CUDA for NVIDIA, otherwise CPU)."""
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        print(f"🚀 Using GPU: {torch.cuda.get_device_name(0)}")
+        return device
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = torch.device('mps')
+        print(f"🍎 Using Apple MPS (Metal Performance Shaders)")
+        return device
+    else:
+        device = torch.device('cpu')
+        print(f"🖥️ Using CPU (no GPU acceleration available)")
+        return device
+
+
 class SimpleGameBoard:
     """Simple embedded Connect-4 board visualization."""
     
@@ -474,6 +490,9 @@ class WorkingDashboard:
         self.root.title("AlphaZero Connect-4 Training Dashboard")
         self.root.geometry("1200x800")
         
+        # Device detection and setup
+        self.device = get_device()
+        
         # Training data
         self.training_data = {
             'policy_losses': [],
@@ -502,6 +521,15 @@ class WorkingDashboard:
         self.game_window = None
         
         self.setup_ui()
+        
+        # Log device info
+        self.log(f"🔧 Device: {self.device}")
+        if self.device.type == 'mps':
+            self.log("🍎 MPS acceleration enabled for faster training!")
+        elif self.device.type == 'cuda':
+            self.log("🚀 CUDA acceleration enabled for faster training!")
+        else:
+            self.log("🖥️ Using CPU - consider getting a GPU for faster training")
     
     def setup_ui(self):
         """Set up the user interface."""
@@ -1003,14 +1031,16 @@ class WorkingDashboard:
             epochs = self.epochs_var.get()
             
             self.log(f"🚀 Starting training: {num_games} games, {epochs} epochs")
+            self.log(f"🔧 Using device: {self.device}")
             
             # Create trainer and networks
             self.update_status("Creating networks...", 5)
             trainer = Trainer(save_dir="models")
-            policy_net = PolicyNetwork(hidden_size=128)
-            value_net = ValueNetwork(hidden_size=128)
+            policy_net = PolicyNetwork(hidden_size=128).to(self.device)
+            value_net = ValueNetwork(hidden_size=128).to(self.device)
             
-            self.log(f"✓ Networks created - Policy: {policy_net.get_num_parameters():,} params")
+            self.log(f"✓ Networks created and moved to {self.device}")
+            self.log(f"  Policy: {policy_net.get_num_parameters():,} params")
             
             # Generate training data
             self.update_status("Generating training data...", 20)
@@ -1029,7 +1059,7 @@ class WorkingDashboard:
             self.log("🧠 Training policy network...")
             
             policy_results = trainer.train_policy_network(
-                policy_net, policy_data, epochs, batch_size=16, learning_rate=0.001
+                policy_net, policy_data, epochs, batch_size=16, learning_rate=0.001, device=self.device
             )
             
             self.training_data['policy_losses'] = policy_results.get('epoch_losses', [])
@@ -1040,7 +1070,7 @@ class WorkingDashboard:
             self.log("🧠 Training value network...")
             
             value_results = trainer.train_value_network(
-                value_net, value_data, epochs, batch_size=16, learning_rate=0.001
+                value_net, value_data, epochs, batch_size=16, learning_rate=0.001, device=self.device
             )
             
             self.training_data['value_losses'] = value_results.get('epoch_losses', [])
@@ -1081,14 +1111,16 @@ class WorkingDashboard:
             self.log(f"🔄 Starting iterative training: {iterations} iterations")
             self.log(f"  Parameters: {num_games} games, {epochs} epochs per iteration")
             self.log(f"  Evaluation: {eval_games} games every {eval_frequency} iterations")
+            self.log(f"🔧 Using device: {self.device}")
             
             # Create trainer and networks (starts fresh each time for now)
             self.update_status("Creating networks...", 5)
             trainer = Trainer(save_dir="models")
-            policy_net = PolicyNetwork(hidden_size=128)
-            value_net = ValueNetwork(hidden_size=128)
+            policy_net = PolicyNetwork(hidden_size=128).to(self.device)
+            value_net = ValueNetwork(hidden_size=128).to(self.device)
             
-            self.log(f"✓ Networks created - Policy: {policy_net.get_num_parameters():,} params")
+            self.log(f"✓ Networks created and moved to {self.device}")
+            self.log(f"  Policy: {policy_net.get_num_parameters():,} params")
             
             # Clear previous evaluation data
             self.evaluation_data = {
@@ -1120,14 +1152,14 @@ class WorkingDashboard:
                 # Train policy network
                 self.log("🧠 Training policy network...")
                 policy_results = trainer.train_policy_network(
-                    policy_net, policy_data, epochs, batch_size=16, learning_rate=0.001
+                    policy_net, policy_data, epochs, batch_size=16, learning_rate=0.001, device=self.device
                 )
                 self.log(f"✓ Policy training complete - Loss: {policy_results['final_loss']:.6f}")
                 
                 # Train value network
                 self.log("🧠 Training value network...")
                 value_results = trainer.train_value_network(
-                    value_net, value_data, epochs, batch_size=16, learning_rate=0.001
+                    value_net, value_data, epochs, batch_size=16, learning_rate=0.001, device=self.device
                 )
                 self.log(f"✓ Value training complete - Loss: {value_results['final_loss']:.6f}")
                 
@@ -1202,19 +1234,19 @@ class WorkingDashboard:
         try:
             # Test on empty board
             empty_board = np.zeros((6, 7))
-            board_tensor = torch.FloatTensor(empty_board).unsqueeze(0)
+            board_tensor = torch.FloatTensor(empty_board).unsqueeze(0).to(self.device)
             
             # Policy test
             policy_net.eval()
             with torch.no_grad():
                 policy_logits = policy_net(board_tensor)
-                policy_probs = torch.softmax(policy_logits, dim=1).squeeze().numpy()
+                policy_probs = torch.softmax(policy_logits, dim=1).squeeze().cpu().numpy()
                 best_action = np.argmax(policy_probs)
             
             # Value test
             value_net.eval()
             with torch.no_grad():
-                value = value_net(board_tensor).item()
+                value = value_net(board_tensor).cpu().item()
             
             self.log(f"🧪 Network test - Prefers column {best_action}, Value: {value:.3f}")
             
