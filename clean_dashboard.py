@@ -24,6 +24,7 @@ from agents.minimax_agent import MinimaxAgent
 from agents.random_agent import RandomAgent
 from agents.policy_agent import PolicyAgent
 from agents.value_agent import ValueAgent
+from agents.mcts_agent import MCTSAgent
 
 
 class SimpleGameBoard:
@@ -545,14 +546,14 @@ class WorkingDashboard:
         tk.Label(agent_params_frame, text="Player 1:").grid(row=0, column=0, padx=5)
         self.player1_var = tk.StringVar(value="Minimax")
         player1_combo = ttk.Combobox(agent_params_frame, textvariable=self.player1_var, 
-                                   values=["Minimax", "Random", "Policy Network", "Value Network"], 
+                                   values=["Minimax", "Random", "MCTS", "Policy Network", "Value Network"], 
                                    width=15, state="readonly")
         player1_combo.grid(row=0, column=1, padx=5)
         
         tk.Label(agent_params_frame, text="Player 2:").grid(row=0, column=2, padx=5)
         self.player2_var = tk.StringVar(value="Random")
         player2_combo = ttk.Combobox(agent_params_frame, textvariable=self.player2_var,
-                                   values=["Minimax", "Random", "Policy Network", "Value Network"],
+                                   values=["Minimax", "Random", "MCTS", "Policy Network", "Value Network"],
                                    width=15, state="readonly")
         player2_combo.grid(row=0, column=3, padx=5)
         
@@ -737,6 +738,8 @@ class WorkingDashboard:
                 return MinimaxAgent(depth=3)
             elif agent_type == "Random":
                 return RandomAgent()
+            elif agent_type == "MCTS":
+                return MCTSAgent(simulations=1000, name="MCTS Agent")
             elif agent_type == "Policy Network":
                 if self.trained_policy_net is None:
                     self.log("⚠️ No trained policy network available, using random agent")
