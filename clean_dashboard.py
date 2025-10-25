@@ -487,7 +487,9 @@ class WorkingDashboard:
             'policy_win_rates': [],
             'value_win_rates': [],
             'policy_vs_minimax': [],
-            'value_vs_minimax': []
+            'value_vs_minimax': [],
+            'policy_vs_mcts': [],
+            'value_vs_mcts': []
         }
         
         # Trained networks storage
@@ -1092,7 +1094,9 @@ class WorkingDashboard:
                 'policy_win_rates': [],
                 'value_win_rates': [],
                 'policy_vs_minimax': [],
-                'value_vs_minimax': []
+                'value_vs_minimax': [],
+                'policy_vs_mcts': [],
+                'value_vs_mcts': []
             }
             
             # Training loop
@@ -1144,17 +1148,26 @@ class WorkingDashboard:
                     policy_vs_minimax = trainer.evaluate_agent_vs_baseline(policy_agent, minimax_agent, num_games=eval_games)
                     value_vs_minimax = trainer.evaluate_agent_vs_baseline(value_agent, minimax_agent, num_games=eval_games)
                     
+                    # Evaluate against MCTS
+                    mcts_agent = MCTSAgent(simulations=500, name="MCTS Agent")  # Use fewer sims for faster eval
+                    policy_vs_mcts = trainer.evaluate_agent_vs_baseline(policy_agent, mcts_agent, num_games=eval_games)
+                    value_vs_mcts = trainer.evaluate_agent_vs_baseline(value_agent, mcts_agent, num_games=eval_games)
+                    
                     # Store results
                     self.evaluation_data['iterations'].append(iteration + 1)
                     self.evaluation_data['policy_win_rates'].append(policy_vs_random['win_rate'])
                     self.evaluation_data['value_win_rates'].append(value_vs_random['win_rate'])
                     self.evaluation_data['policy_vs_minimax'].append(policy_vs_minimax['win_rate'])
                     self.evaluation_data['value_vs_minimax'].append(value_vs_minimax['win_rate'])
+                    self.evaluation_data['policy_vs_mcts'].append(policy_vs_mcts['win_rate'])
+                    self.evaluation_data['value_vs_mcts'].append(value_vs_mcts['win_rate'])
                     
                     self.log(f"📊 Policy vs Random: {policy_vs_random['win_rate']:.2%}")
                     self.log(f"📊 Value vs Random: {value_vs_random['win_rate']:.2%}")
                     self.log(f"📊 Policy vs Minimax: {policy_vs_minimax['win_rate']:.2%}")
                     self.log(f"📊 Value vs Minimax: {value_vs_minimax['win_rate']:.2%}")
+                    self.log(f"📊 Policy vs MCTS: {policy_vs_mcts['win_rate']:.2%}")
+                    self.log(f"📊 Value vs MCTS: {value_vs_mcts['win_rate']:.2%}")
                     
                     # Update evaluation charts
                     self.update_evaluation_charts()
@@ -1244,11 +1257,13 @@ class WorkingDashboard:
                    ha='center', va='center', fontsize=16, transform=ax.transAxes)
             ax.set_title('Evaluation Metrics')
         else:
-            # Create subplots
-            ax1 = self.eval_fig.add_subplot(2, 2, 1)
-            ax2 = self.eval_fig.add_subplot(2, 2, 2)
-            ax3 = self.eval_fig.add_subplot(2, 2, 3)
-            ax4 = self.eval_fig.add_subplot(2, 2, 4)
+            # Create subplots (3x2 layout to include MCTS)
+            ax1 = self.eval_fig.add_subplot(3, 2, 1)
+            ax2 = self.eval_fig.add_subplot(3, 2, 2)
+            ax3 = self.eval_fig.add_subplot(3, 2, 3)
+            ax4 = self.eval_fig.add_subplot(3, 2, 4)
+            ax5 = self.eval_fig.add_subplot(3, 2, 5)
+            ax6 = self.eval_fig.add_subplot(3, 2, 6)
             
             iterations = self.evaluation_data['iterations']
             
@@ -1272,25 +1287,64 @@ class WorkingDashboard:
             ax2.legend()
             ax2.grid(True, alpha=0.3)
             
-            # Policy network progression
-            ax3.plot(iterations, self.evaluation_data['policy_win_rates'], 'b-', label='vs Random', linewidth=2)
-            ax3.plot(iterations, self.evaluation_data['policy_vs_minimax'], 'b--', label='vs Minimax', linewidth=2)
-            ax3.set_title('Policy Network Performance')
+            # Win rates vs MCTS
+            ax3.plot(iterations, self.evaluation_data['policy_vs_mcts'], 'b-o', label='Policy', linewidth=2)
+            ax3.plot(iterations, self.evaluation_data['value_vs_mcts'], 'r-s', label='Value', linewidth=2)
+            ax3.set_title('Win Rate vs MCTS Agent')
             ax3.set_xlabel('Iteration')
             ax3.set_ylabel('Win Rate')
             ax3.set_ylim(0, 1)
             ax3.legend()
             ax3.grid(True, alpha=0.3)
             
-            # Value network progression
-            ax4.plot(iterations, self.evaluation_data['value_win_rates'], 'r-', label='vs Random', linewidth=2)
-            ax4.plot(iterations, self.evaluation_data['value_vs_minimax'], 'r--', label='vs Minimax', linewidth=2)
-            ax4.set_title('Value Network Performance')
+            # Policy network progression (all opponents)
+            ax4.plot(iterations, self.evaluation_data['policy_win_rates'], 'b-', label='vs Random', linewidth=2)
+            ax4.plot(iterations, self.evaluation_data['policy_vs_minimax'], 'b--', label='vs Minimax', linewidth=2)
+            ax4.plot(iterations, self.evaluation_data['policy_vs_mcts'], 'b:', label='vs MCTS', linewidth=2)
+            ax4.set_title('Policy Network Performance')
             ax4.set_xlabel('Iteration')
             ax4.set_ylabel('Win Rate')
             ax4.set_ylim(0, 1)
             ax4.legend()
             ax4.grid(True, alpha=0.3)
+            
+            # Value network progression (all opponents)
+            ax5.plot(iterations, self.evaluation_data['value_win_rates'], 'r-', label='vs Random', linewidth=2)
+            ax5.plot(iterations, self.evaluation_data['value_vs_minimax'], 'r--', label='vs Minimax', linewidth=2)
+            ax5.plot(iterations, self.evaluation_data['value_vs_mcts'], 'r:', label='vs MCTS', linewidth=2)
+            ax5.set_title('Value Network Performance')
+            ax5.set_xlabel('Iteration')
+            ax5.set_ylabel('Win Rate')
+            ax5.set_ylim(0, 1)
+            ax5.legend()
+            ax5.grid(True, alpha=0.3)
+            
+            # Comparative performance summary
+            if len(iterations) > 0:
+                latest_idx = -1
+                policy_random = self.evaluation_data['policy_win_rates'][latest_idx]
+                policy_minimax = self.evaluation_data['policy_vs_minimax'][latest_idx]
+                policy_mcts = self.evaluation_data['policy_vs_mcts'][latest_idx]
+                value_random = self.evaluation_data['value_win_rates'][latest_idx]
+                value_minimax = self.evaluation_data['value_vs_minimax'][latest_idx]
+                value_mcts = self.evaluation_data['value_vs_mcts'][latest_idx]
+                
+                agents = ['vs Random', 'vs Minimax', 'vs MCTS']
+                policy_scores = [policy_random, policy_minimax, policy_mcts]
+                value_scores = [value_random, value_minimax, value_mcts]
+                
+                x = np.arange(len(agents))
+                width = 0.35
+                
+                ax6.bar(x - width/2, policy_scores, width, label='Policy', color='blue', alpha=0.7)
+                ax6.bar(x + width/2, value_scores, width, label='Value', color='red', alpha=0.7)
+                ax6.set_title('Latest Performance Summary')
+                ax6.set_ylabel('Win Rate')
+                ax6.set_xticks(x)
+                ax6.set_xticklabels(agents)
+                ax6.set_ylim(0, 1)
+                ax6.legend()
+                ax6.grid(True, alpha=0.3)
         
         self.eval_fig.tight_layout()
         self.eval_canvas.draw()
