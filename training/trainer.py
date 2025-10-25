@@ -14,9 +14,13 @@ from typing import List, Tuple, Dict, Optional
 from collections import deque
 import os
 import sys
+import random
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from connect4_env import GymnasiumConnectFour
+from agents.minimax_agent import MinimaxAgent
+from agents.random_agent import RandomAgent
 
 
 class Trainer:
@@ -270,6 +274,115 @@ class Trainer:
         
         return results
     
+    def evaluate_agent_vs_baseline(self, agent, baseline_agent=None, num_games: int = 10) -> Dict:
+        """
+        Evaluate an agent against a baseline (default: random agent).
+        
+        Args:
+            agent: Agent to evaluate (can be PolicyAgent, ValueAgent, etc.)
+            baseline_agent: Baseline agent (default: RandomAgent)
+            num_games: Number of games to play
+            
+        Returns:
+            Dictionary with win rate statistics
+        """
+        print(f"Evaluating agent vs baseline over {num_games} games...")
+        
+        if baseline_agent is None:
+            from agents.random_agent import RandomAgent
+            baseline_agent = RandomAgent("Random Baseline")
+        
+        # Play games
+        wins = 0
+        losses = 0
+        ties = 0
+        
+        for game_num in range(num_games):
+            # Alternate who goes first
+            if game_num % 2 == 0:
+                player1, player2 = agent, baseline_agent
+            else:
+                player1, player2 = baseline_agent, agent
+            
+            winner = self._play_single_evaluation_game(player1, player2)
+            
+            # Count results from agent's perspective
+            if winner == 0:
+                ties += 1
+            elif (winner == 1 and player1 == agent) or (winner == -1 and player2 == agent):
+                wins += 1
+            else:
+                losses += 1
+        
+        win_rate = wins / num_games
+        
+        results = {
+            'wins': wins,
+            'losses': losses,
+            'ties': ties,
+            'total_games': num_games,
+            'win_rate': win_rate,
+            'agent_name': agent.name,
+            'baseline_name': baseline_agent.name
+        }
+        
+        print(f"Results: {wins}W-{losses}L-{ties}T (Win rate: {win_rate:.2%})")
+        return results
+    
+    def _play_single_evaluation_game(self, player1, player2):
+        """Play a single game for evaluation purposes."""
+        try:
+            from connect4_env import GymnasiumConnectFour
+            env = GymnasiumConnectFour()
+            env.reset()
+            
+            terminated = False
+            max_moves = 42
+            move_count = 0
+            
+            while not terminated and move_count < max_moves:
+                # Get current player
+                current_agent = player1 if env.current_player == 1 else player2
+                
+                # Get action using the unified interface
+                try:
+                    # Try neural network interface first
+                    if hasattr(current_agent, 'set_player_id'):
+                        current_agent.set_player_id(env.current_player)
+                    
+                    board = env.board.copy()
+                    action_mask = env._action_mask()
+                    action = current_agent.select_action(board, action_mask)
+                except TypeError:
+                    # Fallback to environment interface
+                    action = current_agent.select_action(env)
+                
+                # Make move
+                step_result = env.step(action)
+                if len(step_result) == 6:
+                    _, reward, terminated, _, info, _ = step_result
+                elif len(step_result) == 5:
+                    _, reward, terminated, _, info = step_result
+                else:
+                    _, reward, terminated, info = step_result
+                
+                move_count += 1
+                
+                # Check for winner
+                if terminated:
+                    if 'winner' in info:
+                        return info['winner']
+                    elif reward != 0:
+                        return env.current_player * -1  # Previous player won
+                    else:
+                        return 0  # Tie
+            
+            return 0  # Tie if max moves reached
+            
+        except Exception as e:
+            print(f"Error in evaluation game: {e}")
+            return 0  # Treat as tie
+    
     def save_training_stats(self, filename: str):
         """Save training statistics to file."""
         import json
@@ -291,6 +404,119 @@ class Trainer:
             print(f"Training statistics loaded from {stats_path}")
         else:
             print(f"Training statistics file not found: {stats_path}")
+    
+    def generate_minimax_training_data(self, num_games: int = 100, minimax_depth: int = 4) -> Tuple[List, List]:
+        """
+        Generate training data using minimax agent vs random agent games.
+        
+        Args:
+            num_games: Number of games to simulate
+            minimax_depth: Search depth for minimax agent
+            
+        Returns:
+            Tuple of (policy_data, value_data) for training
+        """
+        # Generate game records
+        game_records = generate_minimax_training_data(num_games, minimax_depth)
+        
+        # Convert to training data
+        policy_data, value_data = self.generate_training_data_from_games(game_records)
+        
+        print(f"Generated {len(policy_data)} training examples from {num_games} games")
+        
+        return policy_data, value_data
+
+
+def generate_minimax_training_data(num_games: int = 100, minimax_depth: int = 4) -> List[Dict]:
+    """
+    Generate training data by playing games between minimax and random agents.
+    
+    Args:
+        num_games: Number of games to play
+        minimax_depth: Depth for minimax search
+        
+    Returns:
+        List of game records with board states, actions, and outcomes
+    """
+    print(f"Generating training data from {num_games} games (Minimax depth={minimax_depth})...")
+    
+    minimax_agent = MinimaxAgent(depth=minimax_depth)
+    random_agent = RandomAgent()
+    
+    game_records = []
+    
+    for game_num in range(num_games):
+        if (game_num + 1) % 20 == 0:
+            print(f"Playing game {game_num + 1}/{num_games}")
+        
+        env = GymnasiumConnectFour()
+        env.reset()
+        
+        # Randomly decide which agent goes first
+        minimax_is_player1 = random.choice([True, False])
+        
+        board_states = []
+        actions = []
+        
+        terminated = False
+        winner = 0
+        
+        while not terminated:
+            current_board = env.board.copy()
+            
+            # Choose action based on current player
+            if (env.current_player == 1 and minimax_is_player1) or \
+               (env.current_player == -1 and not minimax_is_player1):
+                # Minimax agent's turn
+                action = minimax_agent.select_action(env)
+            else:
+                # Random agent's turn
+                action = random_agent.select_action(env)
+            
+            # Store the board state and action
+            board_states.append(current_board)
+            actions.append(action)
+            
+            # Make the move
+            _, reward, terminated, _, info, _ = env.step(action)
+            
+            # Check game outcome
+            if terminated:
+                if info.get("reason") == "Win":
+                    winner = info.get("winner", 0)
+                elif info.get("reason") == "Tie":
+                    winner = 0
+                else:  # Illegal move (shouldn't happen with proper agents)
+                    winner = 0
+        
+        # Store game record
+        game_record = {
+            'board_states': board_states,
+            'actions': actions,
+            'winner': winner,
+            'minimax_is_player1': minimax_is_player1,
+            'num_moves': len(actions)
+        }
+        game_records.append(game_record)
+    
+    print(f"Generated {len(game_records)} games")
+    
+    # Print some statistics
+    wins_as_player1 = sum(1 for g in game_records if g['winner'] == 1)
+    wins_as_player2 = sum(1 for g in game_records if g['winner'] == -1)
+    ties = sum(1 for g in game_records if g['winner'] == 0)
+    
+    minimax_wins = 0
+    for game in game_records:
+        if game['winner'] == 1 and game['minimax_is_player1']:
+            minimax_wins += 1
+        elif game['winner'] == -1 and not game['minimax_is_player1']:
+            minimax_wins += 1
+    
+    print(f"Results: Player 1 wins: {wins_as_player1}, Player -1 wins: {wins_as_player2}, Ties: {ties}")
+    print(f"Minimax wins: {minimax_wins}/{num_games} ({100*minimax_wins/num_games:.1f}%)")
+    
+    return game_records
 
 
 def create_sample_training_data(num_samples: int = 1000) -> Tuple[List, List]:

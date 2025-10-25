@@ -35,17 +35,17 @@ class PolicyNetwork(nn.Module):
         self.conv_layers = nn.ModuleList()
         
         # First conv layer: 1 input channel (board), 32 output channels
-        self.conv_layers.append(nn.Conv2d(1, 32, kernel_size=3, padding=1))
+        self.conv_layers.append(nn.Conv2d(1, 8, kernel_size=3, padding=1))
         
-        # Additional conv layers: 32 -> 32 channels
+        # Additional conv layers: 8 -> 8 channels
         for _ in range(num_conv_layers - 1):
-            self.conv_layers.append(nn.Conv2d(32, 32, kernel_size=3, padding=1))
+            self.conv_layers.append(nn.Conv2d(8, 8, kernel_size=3, padding=1))
         
         # Batch normalization for each conv layer
-        self.batch_norms = nn.ModuleList([nn.BatchNorm2d(32) for _ in range(num_conv_layers)])
+        self.batch_norms = nn.ModuleList([nn.BatchNorm2d(8) for _ in range(num_conv_layers)])
         
-        # Calculate the size after convolutions (6*7*32 = 1344)
-        conv_output_size = 6 * 7 * 32
+        # Calculate the size after convolutions (6*7*8 = 336)
+        conv_output_size = 6 * 7 * 8
         
         # Fully connected layers
         self.fc1 = nn.Linear(conv_output_size, hidden_size)
