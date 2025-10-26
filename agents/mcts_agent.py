@@ -168,9 +168,9 @@ class MCTSAgent(BaseAgent):
         root = MCTSNode(board, player=current_player)
         
         # If only one legal move, return it immediately
-        legal_actions = np.where(action_mask)[0]
+        legal_actions = np.where(action_mask == 1)[0]  # Fix: specify condition and extract first element of tuple
         if len(legal_actions) == 1:
-            return legal_actions[0]
+            return int(legal_actions[0])  # Ensure return type is int
         
         # Run MCTS simulations
         start_time = time.time()

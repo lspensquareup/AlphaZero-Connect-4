@@ -53,45 +53,48 @@ class PolicyAgent(BaseAgent):
         """Set temperature for action selection (higher = more random)."""
         self.temperature = temperature
     
-    def select_action(self, board: np.ndarray, action_mask: np.ndarray) -> int:
+    def select_action(self, board, action_mask, temperature=0.1):
         """
-        Select action using policy network.
+        Select action using policy network with temperature sampling.
         
         Args:
-            board: 6x7 board state
-            action_mask: Valid moves mask
+            board: Current board state (6x7 numpy array)
+            action_mask: Boolean mask of valid actions (7-element array)
+            temperature: Sampling temperature (lower = more deterministic)
             
         Returns:
-            Selected column (0-6)
+            Selected action (column index)
         """
         if self.network is None:
-            # Fallback to random if no network loaded
+            # Fallback to random legal move if no network loaded
             valid_actions = np.where(action_mask == 1)[0]
-            return np.random.choice(valid_actions)
+            return np.random.choice(valid_actions) if len(valid_actions) > 0 else 3
         
-        # Prepare input for network
-        # Adjust board perspective for current player
-        player_board = board * self.player_id
-        board_tensor = torch.FloatTensor(player_board).unsqueeze(0).to(self.device)  # Move to device
+        # Convert board to tensor - use board directly without perspective transformation
+        # The network should learn to play from any player's perspective
+        board_tensor = torch.FloatTensor(board).unsqueeze(0).to(self.device)
         
         with torch.no_grad():
-            action_probs = self.network(board_tensor)
-            action_probs = action_probs.squeeze(0).cpu()  # Move back to CPU for operations
-        
-        # Apply action mask (set invalid actions to very low probability)
-        masked_probs = action_probs.clone()
-        masked_probs[action_mask == 0] = -float('inf')
-        
-        # Apply temperature and softmax
-        if self.temperature > 0:
-            action_probs = F.softmax(masked_probs / self.temperature, dim=0)
-            # Sample from the distribution
-            action = torch.multinomial(action_probs, 1).item()
-        else:
-            # Greedy selection (temperature = 0)
-            action = torch.argmax(masked_probs).item()
-        
-        return action
+            # Get action probabilities from network
+            action_logits = self.network(board_tensor)
+            action_logits = action_logits.squeeze(0).cpu()  # Move back to CPU
+            
+            # Apply action mask (set invalid actions to very negative values)
+            masked_logits = action_logits.clone()
+            masked_logits[action_mask == 0] = -float('inf')
+            
+            # Apply temperature and convert to probabilities
+            if temperature > 0:
+                scaled_logits = masked_logits / temperature
+                action_probs = F.softmax(scaled_logits, dim=0)
+                
+                # Sample from the probability distribution
+                action = torch.multinomial(action_probs, 1).item()
+            else:
+                # Greedy selection (take best action)
+                action = torch.argmax(masked_logits).item()
+            
+            return action
     
     def get_action_probabilities(self, board: np.ndarray, action_mask: np.ndarray) -> np.ndarray:
         """
@@ -106,18 +109,17 @@ class PolicyAgent(BaseAgent):
             probs = probs / probs.sum() if probs.sum() > 0 else probs
             return probs
         
-        # Adjust board perspective for current player
-        player_board = board * self.player_id
-        board_tensor = torch.FloatTensor(player_board).unsqueeze(0).to(self.device)  # Move to device
+        # Convert board to tensor - use board directly without perspective transformation
+        board_tensor = torch.FloatTensor(board).unsqueeze(0).to(self.device)  # Move to device
         
         with torch.no_grad():
-            action_probs = self.network(board_tensor)
-            action_probs = action_probs.squeeze(0).cpu()  # Move back to CPU
+            action_logits = self.network(board_tensor)
+            action_logits = action_logits.squeeze(0).cpu()  # Move back to CPU
         
         # Apply action mask
-        masked_probs = action_probs.clone()
-        masked_probs[action_mask == 0] = -float('inf')
+        masked_logits = action_logits.clone()
+        masked_logits[action_mask == 0] = -float('inf')
         
         # Convert to probabilities
-        probs = F.softmax(masked_probs, dim=0)
+        probs = F.softmax(masked_logits, dim=0)
         return probs.numpy()

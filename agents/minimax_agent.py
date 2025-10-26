@@ -128,16 +128,18 @@ class MinimaxAgent(BaseAgent):
     
     def _evaluate_position(self, env: GymnasiumConnectFour) -> float:
         """
-        Evaluate a board position heuristically.
+        Evaluate a board position heuristically from the current player's perspective.
         
         Args:
             env: Game environment
             
         Returns:
-            Position evaluation score
+            Position evaluation score (positive = good for current player)
         """
         board = env.board
         score = 0
+        current_player = env.current_player
+        opponent = -current_player
         
         # Check all possible 4-in-a-row positions
         for row in range(6):
@@ -145,58 +147,60 @@ class MinimaxAgent(BaseAgent):
                 # Horizontal
                 if col <= 3:
                     window = board[row, col:col+4]
-                    score += self._evaluate_window(window)
+                    score += self._evaluate_window(window, current_player, opponent)
                 
                 # Vertical
                 if row <= 2:
                     window = board[row:row+4, col]
-                    score += self._evaluate_window(window)
+                    score += self._evaluate_window(window, current_player, opponent)
                 
                 # Diagonal (positive slope)
                 if row <= 2 and col <= 3:
                     window = [board[row+i, col+i] for i in range(4)]
-                    score += self._evaluate_window(np.array(window))
+                    score += self._evaluate_window(np.array(window), current_player, opponent)
                 
                 # Diagonal (negative slope)
                 if row >= 3 and col <= 3:
                     window = [board[row-i, col+i] for i in range(4)]
-                    score += self._evaluate_window(np.array(window))
+                    score += self._evaluate_window(np.array(window), current_player, opponent)
         
         return score
     
-    def _evaluate_window(self, window: np.ndarray) -> float:
+    def _evaluate_window(self, window: np.ndarray, current_player: int, opponent: int) -> float:
         """
-        Evaluate a 4-piece window.
+        Evaluate a 4-piece window from the current player's perspective.
         
         Args:
             window: Array of 4 board positions
+            current_player: Current player (1 or -1)
+            opponent: Opponent player (-1 or 1)
             
         Returns:
-            Window evaluation score
+            Window evaluation score (positive = good for current player)
         """
         score = 0
-        player1_count = np.sum(window == 1)
-        player2_count = np.sum(window == -1)
+        player_count = np.sum(window == current_player)
+        opponent_count = np.sum(window == opponent)
         empty_count = np.sum(window == 0)
         
         # Can't have both players in the same window
-        if player1_count > 0 and player2_count > 0:
+        if player_count > 0 and opponent_count > 0:
             return 0
         
-        # Score for player 1
-        if player1_count == 4:
+        # Score for current player (positive)
+        if player_count == 4:
             score += 100
-        elif player1_count == 3 and empty_count == 1:
+        elif player_count == 3 and empty_count == 1:
             score += 10
-        elif player1_count == 2 and empty_count == 2:
+        elif player_count == 2 and empty_count == 2:
             score += 2
         
-        # Score for player -1
-        if player2_count == 4:
+        # Score for opponent (negative)
+        if opponent_count == 4:
             score -= 100
-        elif player2_count == 3 and empty_count == 1:
+        elif opponent_count == 3 and empty_count == 1:
             score -= 10
-        elif player2_count == 2 and empty_count == 2:
+        elif opponent_count == 2 and empty_count == 2:
             score -= 2
         
         return score

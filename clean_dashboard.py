@@ -505,8 +505,12 @@ class WorkingDashboard:
             'iterations': [],
             'policy_win_rates': [],
             'value_win_rates': [],
-            'policy_vs_minimax': [],
-            'value_vs_minimax': [],
+            'policy_vs_minimax_depth_2': [],
+            'value_vs_minimax_depth_2': [],
+            'policy_vs_minimax_depth_3': [],
+            'value_vs_minimax_depth_3': [],
+            'policy_vs_minimax_depth_4': [],
+            'value_vs_minimax_depth_4': [],
             'policy_vs_mcts': [],
             'value_vs_mcts': [],
             'policy_losses': [],
@@ -542,12 +546,16 @@ class WorkingDashboard:
         params_frame.pack(padx=10, pady=10)
         
         tk.Label(params_frame, text="Games:").grid(row=0, column=0, padx=5)
-        self.games_var = tk.IntVar(value=15)
+        self.games_var = tk.IntVar(value=10)  # Reduced for debugging
         tk.Entry(params_frame, textvariable=self.games_var, width=8).grid(row=0, column=1, padx=5)
         
         tk.Label(params_frame, text="Epochs:").grid(row=0, column=2, padx=5)
-        self.epochs_var = tk.IntVar(value=10)
+        self.epochs_var = tk.IntVar(value=10)  # Reduced for faster iteration
         tk.Entry(params_frame, textvariable=self.epochs_var, width=8).grid(row=0, column=3, padx=5)
+        
+        tk.Label(params_frame, text="Minimax Depth:").grid(row=0, column=4, padx=5)
+        self.minimax_depth_var = tk.IntVar(value=2)  # Very easy minimax for debugging
+        tk.Entry(params_frame, textvariable=self.minimax_depth_var, width=8).grid(row=0, column=5, padx=5)
         
         # Iterative training controls
         iter_frame = ttk.LabelFrame(control_frame, text="Iterative Training with Evaluation")
@@ -557,11 +565,11 @@ class WorkingDashboard:
         iter_params_frame.pack(padx=10, pady=5)
         
         tk.Label(iter_params_frame, text="Iterations:").grid(row=0, column=0, padx=5)
-        self.iterations_var = tk.IntVar(value=5)
+        self.iterations_var = tk.IntVar(value=3)  # Reduced for debugging
         tk.Entry(iter_params_frame, textvariable=self.iterations_var, width=8).grid(row=0, column=1, padx=5)
         
         tk.Label(iter_params_frame, text="Eval Games:").grid(row=0, column=2, padx=5)
-        self.eval_games_var = tk.IntVar(value=10)
+        self.eval_games_var = tk.IntVar(value=10)  # Reduced for faster debugging
         tk.Entry(iter_params_frame, textvariable=self.eval_games_var, width=8).grid(row=0, column=3, padx=5)
         
         tk.Label(iter_params_frame, text="Eval Every:").grid(row=0, column=4, padx=5)
@@ -1029,9 +1037,11 @@ class WorkingDashboard:
             # Get parameters
             num_games = self.games_var.get()
             epochs = self.epochs_var.get()
+            minimax_depth = self.minimax_depth_var.get()
             
             self.log(f"🚀 Starting training: {num_games} games, {epochs} epochs")
             self.log(f"🔧 Using device: {self.device}")
+            self.log(f"🤖 Minimax training depth: {minimax_depth}")
             
             # Create trainer and networks
             self.update_status("Creating networks...", 5)
@@ -1048,7 +1058,7 @@ class WorkingDashboard:
             
             policy_data, value_data = trainer.generate_minimax_training_data(
                 num_games=num_games,
-                minimax_depth=4
+                minimax_depth=minimax_depth
             )
             
             self.training_data['training_examples'] = len(policy_data)
@@ -1107,13 +1117,15 @@ class WorkingDashboard:
             iterations = self.iterations_var.get()
             eval_games = self.eval_games_var.get()
             eval_frequency = self.eval_frequency_var.get()
+            minimax_depth = self.minimax_depth_var.get()
             
             self.log(f"🔄 Starting iterative training: {iterations} iterations")
             self.log(f"  Parameters: {num_games} games, {epochs} epochs per iteration")
             self.log(f"  Evaluation: {eval_games} games every {eval_frequency} iterations")
             self.log(f"🔧 Using device: {self.device}")
+            self.log(f"🤖 Minimax training depth: {minimax_depth}")
             
-            # Create trainer and networks (starts fresh each time for now)
+            # Create trainer and networks (persist across iterations)
             self.update_status("Creating networks...", 5)
             trainer = Trainer(save_dir="models")
             policy_net = PolicyNetwork(hidden_size=128).to(self.device)
@@ -1122,13 +1134,33 @@ class WorkingDashboard:
             self.log(f"✓ Networks created and moved to {self.device}")
             self.log(f"  Policy: {policy_net.get_num_parameters():,} params")
             
+            # Test untrained network performance (baseline)
+            self.log("🔍 Testing untrained network performance...")
+            untrained_policy_agent = PolicyAgent(name="Untrained Policy")
+            untrained_policy_agent.set_network(policy_net.eval())
+            untrained_policy_agent.temperature = 0.1
+            
+            minimax_baseline = MinimaxAgent(depth=2)
+            untrained_vs_minimax = trainer.evaluate_agent_vs_baseline(
+                untrained_policy_agent, minimax_baseline, num_games=10
+            )
+            self.log(f"  Untrained vs Minimax-2: {untrained_vs_minimax['win_rate']:.2%}")
+            
+            # Set network back to training mode
+            policy_net.train()
+            value_net.train()
+            
             # Clear previous evaluation data
             self.evaluation_data = {
                 'iterations': [],
                 'policy_win_rates': [],
                 'value_win_rates': [],
-                'policy_vs_minimax': [],
-                'value_vs_minimax': [],
+                'policy_vs_minimax_depth_2': [],
+                'value_vs_minimax_depth_2': [],
+                'policy_vs_minimax_depth_3': [],
+                'value_vs_minimax_depth_3': [],
+                'policy_vs_minimax_depth_4': [],
+                'value_vs_minimax_depth_4': [],
                 'policy_vs_mcts': [],
                 'value_vs_mcts': [],
                 'policy_losses': [],
@@ -1145,23 +1177,49 @@ class WorkingDashboard:
                 self.log("🎮 Generating training games...")
                 policy_data, value_data = trainer.generate_minimax_training_data(
                     num_games=num_games,
-                    minimax_depth=4
+                    minimax_depth=minimax_depth
                 )
                 self.log(f"✓ Generated {len(policy_data)} training examples")
                 
+                # Debug: Check training data quality
+                if len(policy_data) > 0:
+                    sample_board, sample_target = policy_data[0]
+                    self.log(f"  Sample policy target sum: {np.sum(sample_target):.3f}")
+                if len(value_data) > 0:
+                    sample_board, sample_value = value_data[0]
+                    self.log(f"  Sample value target: {sample_value:.3f}")
+                
                 # Train policy network
                 self.log("🧠 Training policy network...")
+                # Get initial weights for comparison
+                initial_policy_param = next(policy_net.parameters()).data.clone()
+                
                 policy_results = trainer.train_policy_network(
                     policy_net, policy_data, epochs, batch_size=16, learning_rate=0.001, device=self.device
                 )
+                
+                # Check if weights actually changed
+                final_policy_param = next(policy_net.parameters()).data
+                weight_change = torch.norm(final_policy_param - initial_policy_param).item()
+                
                 self.log(f"✓ Policy training complete - Loss: {policy_results['final_loss']:.6f}")
+                self.log(f"  Weight change magnitude: {weight_change:.6f}")
                 
                 # Train value network
                 self.log("🧠 Training value network...")
+                # Get initial weights for comparison
+                initial_value_param = next(value_net.parameters()).data.clone()
+                
                 value_results = trainer.train_value_network(
                     value_net, value_data, epochs, batch_size=16, learning_rate=0.001, device=self.device
                 )
+                
+                # Check if weights actually changed
+                final_value_param = next(value_net.parameters()).data
+                weight_change = torch.norm(final_value_param - initial_value_param).item()
+                
                 self.log(f"✓ Value training complete - Loss: {value_results['final_loss']:.6f}")
+                self.log(f"  Weight change magnitude: {weight_change:.6f}")
                 
                 # Evaluation phase
                 if (iteration + 1) % eval_frequency == 0:
@@ -1171,30 +1229,54 @@ class WorkingDashboard:
                     # Create agents for evaluation
                     policy_agent = PolicyAgent(name="Policy Agent")
                     policy_agent.set_network(policy_net.eval())
+                    policy_agent.temperature = 0.1  # Low temperature for deterministic play
                     
                     value_agent = ValueAgent(name="Value Agent")
                     value_agent.set_network(value_net.eval())
                     
                     # Evaluate against random
+                    self.log("🎯 Evaluating vs Random...")
                     policy_vs_random = trainer.evaluate_agent_vs_baseline(policy_agent, num_games=eval_games)
                     value_vs_random = trainer.evaluate_agent_vs_baseline(value_agent, num_games=eval_games)
                     
-                    # Evaluate against minimax
-                    minimax_agent = MinimaxAgent(depth=3)
-                    policy_vs_minimax = trainer.evaluate_agent_vs_baseline(policy_agent, minimax_agent, num_games=eval_games)
-                    value_vs_minimax = trainer.evaluate_agent_vs_baseline(value_agent, minimax_agent, num_games=eval_games)
+                    # Evaluate against multiple minimax depths
+                    self.log("🎯 Evaluating vs Minimax depth 2...")
+                    minimax_agent_d2 = MinimaxAgent(depth=2)
+                    policy_vs_minimax_d2 = trainer.evaluate_agent_vs_baseline(policy_agent, minimax_agent_d2, num_games=eval_games)
+                    value_vs_minimax_d2 = trainer.evaluate_agent_vs_baseline(value_agent, minimax_agent_d2, num_games=eval_games)
                     
-                    # Evaluate against MCTS
-                    mcts_agent = MCTSAgent(simulations=500, name="MCTS Agent")  # Use fewer sims for faster eval
+                    self.log("🎯 Evaluating vs Minimax depth 3...")
+                    minimax_agent_d3 = MinimaxAgent(depth=3)
+                    policy_vs_minimax_d3 = trainer.evaluate_agent_vs_baseline(policy_agent, minimax_agent_d3, num_games=eval_games)
+                    value_vs_minimax_d3 = trainer.evaluate_agent_vs_baseline(value_agent, minimax_agent_d3, num_games=eval_games)
+                    
+                    self.log("🎯 Evaluating vs Minimax depth 4...")
+                    minimax_agent_d4 = MinimaxAgent(depth=4)
+                    policy_vs_minimax_d4 = trainer.evaluate_agent_vs_baseline(policy_agent, minimax_agent_d4, num_games=eval_games)
+                    value_vs_minimax_d4 = trainer.evaluate_agent_vs_baseline(value_agent, minimax_agent_d4, num_games=eval_games)
+                    
+                    # Debug: Log detailed results
+                    self.log(f"  Policy vs Random: {policy_vs_random['wins']}W-{policy_vs_random['losses']}L-{policy_vs_random['ties']}T")
+                    self.log(f"  Policy vs Minimax-2: {policy_vs_minimax_d2['wins']}W-{policy_vs_minimax_d2['losses']}L-{policy_vs_minimax_d2['ties']}T")
+                    self.log(f"  Policy vs Minimax-3: {policy_vs_minimax_d3['wins']}W-{policy_vs_minimax_d3['losses']}L-{policy_vs_minimax_d3['ties']}T")
+                    self.log(f"  Policy vs Minimax-4: {policy_vs_minimax_d4['wins']}W-{policy_vs_minimax_d4['losses']}L-{policy_vs_minimax_d4['ties']}T")
+                    
+                    # Evaluate against MCTS (simplified)
+                    self.log("🎯 Evaluating vs MCTS...")
+                    mcts_agent = MCTSAgent(simulations=100, name="MCTS Agent")  # Reduced sims for speed
                     policy_vs_mcts = trainer.evaluate_agent_vs_baseline(policy_agent, mcts_agent, num_games=eval_games)
                     value_vs_mcts = trainer.evaluate_agent_vs_baseline(value_agent, mcts_agent, num_games=eval_games)
                     
-                    # Store results
+                    # Store results for all depths
                     self.evaluation_data['iterations'].append(iteration + 1)
                     self.evaluation_data['policy_win_rates'].append(policy_vs_random['win_rate'])
                     self.evaluation_data['value_win_rates'].append(value_vs_random['win_rate'])
-                    self.evaluation_data['policy_vs_minimax'].append(policy_vs_minimax['win_rate'])
-                    self.evaluation_data['value_vs_minimax'].append(value_vs_minimax['win_rate'])
+                    self.evaluation_data['policy_vs_minimax_depth_2'].append(policy_vs_minimax_d2['win_rate'])
+                    self.evaluation_data['value_vs_minimax_depth_2'].append(value_vs_minimax_d2['win_rate'])
+                    self.evaluation_data['policy_vs_minimax_depth_3'].append(policy_vs_minimax_d3['win_rate'])
+                    self.evaluation_data['value_vs_minimax_depth_3'].append(value_vs_minimax_d3['win_rate'])
+                    self.evaluation_data['policy_vs_minimax_depth_4'].append(policy_vs_minimax_d4['win_rate'])
+                    self.evaluation_data['value_vs_minimax_depth_4'].append(value_vs_minimax_d4['win_rate'])
                     self.evaluation_data['policy_vs_mcts'].append(policy_vs_mcts['win_rate'])
                     self.evaluation_data['value_vs_mcts'].append(value_vs_mcts['win_rate'])
                     self.evaluation_data['policy_losses'].append(policy_results['final_loss'])
@@ -1202,8 +1284,8 @@ class WorkingDashboard:
                     
                     self.log(f"📊 Policy vs Random: {policy_vs_random['win_rate']:.2%}")
                     self.log(f"📊 Value vs Random: {value_vs_random['win_rate']:.2%}")
-                    self.log(f"📊 Policy vs Minimax: {policy_vs_minimax['win_rate']:.2%}")
-                    self.log(f"📊 Value vs Minimax: {value_vs_minimax['win_rate']:.2%}")
+                    self.log(f"📊 Policy vs Minimax-2: {policy_vs_minimax_d2['win_rate']:.2%}")
+                    self.log(f"📊 Value vs Minimax-2: {value_vs_minimax_d2['win_rate']:.2%}")
                     self.log(f"📊 Policy vs MCTS: {policy_vs_mcts['win_rate']:.2%}")
                     self.log(f"📊 Value vs MCTS: {value_vs_mcts['win_rate']:.2%}")
                     
@@ -1318,14 +1400,18 @@ class WorkingDashboard:
             ax1.legend()
             ax1.grid(True, alpha=0.3)
             
-            # Win rates vs Minimax
-            ax2.plot(iterations, self.evaluation_data['policy_vs_minimax'], 'b-o', label='Policy', linewidth=2)
-            ax2.plot(iterations, self.evaluation_data['value_vs_minimax'], 'r-s', label='Value', linewidth=2)
-            ax2.set_title('Win Rate vs Minimax Agent')
+            # Win rates vs Minimax (Multiple Depths)
+            ax2.plot(iterations, self.evaluation_data['policy_vs_minimax_depth_2'], 'b-o', label='Policy vs Depth 2', linewidth=2)
+            ax2.plot(iterations, self.evaluation_data['policy_vs_minimax_depth_3'], 'b--', label='Policy vs Depth 3', linewidth=2)
+            ax2.plot(iterations, self.evaluation_data['policy_vs_minimax_depth_4'], 'b:', label='Policy vs Depth 4', linewidth=2)
+            ax2.plot(iterations, self.evaluation_data['value_vs_minimax_depth_2'], 'r-s', label='Value vs Depth 2', linewidth=2)
+            ax2.plot(iterations, self.evaluation_data['value_vs_minimax_depth_3'], 'r--', label='Value vs Depth 3', linewidth=2)
+            ax2.plot(iterations, self.evaluation_data['value_vs_minimax_depth_4'], 'r:', label='Value vs Depth 4', linewidth=2)
+            ax2.set_title('Win Rate vs Minimax (Multiple Depths)')
             ax2.set_xlabel('Iteration')
             ax2.set_ylabel('Win Rate')
             ax2.set_ylim(0, 1)
-            ax2.legend()
+            ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
             ax2.grid(True, alpha=0.3)
             
             # Win rates vs MCTS
@@ -1340,8 +1426,10 @@ class WorkingDashboard:
             
             # Policy network progression (all opponents)
             ax4.plot(iterations, self.evaluation_data['policy_win_rates'], 'b-', label='vs Random', linewidth=2)
-            ax4.plot(iterations, self.evaluation_data['policy_vs_minimax'], 'b--', label='vs Minimax', linewidth=2)
-            ax4.plot(iterations, self.evaluation_data['policy_vs_mcts'], 'b:', label='vs MCTS', linewidth=2)
+            ax4.plot(iterations, self.evaluation_data['policy_vs_minimax_depth_2'], 'b--', label='vs Minimax D2', linewidth=2)
+            ax4.plot(iterations, self.evaluation_data['policy_vs_minimax_depth_3'], 'b-.', label='vs Minimax D3', linewidth=2)
+            ax4.plot(iterations, self.evaluation_data['policy_vs_minimax_depth_4'], 'b:', label='vs Minimax D4', linewidth=2)
+            ax4.plot(iterations, self.evaluation_data['policy_vs_mcts'], 'g-', label='vs MCTS', linewidth=2)
             ax4.set_title('Policy Network Performance')
             ax4.set_xlabel('Iteration')
             ax4.set_ylabel('Win Rate')
@@ -1351,8 +1439,10 @@ class WorkingDashboard:
             
             # Value network progression (all opponents)
             ax5.plot(iterations, self.evaluation_data['value_win_rates'], 'r-', label='vs Random', linewidth=2)
-            ax5.plot(iterations, self.evaluation_data['value_vs_minimax'], 'r--', label='vs Minimax', linewidth=2)
-            ax5.plot(iterations, self.evaluation_data['value_vs_mcts'], 'r:', label='vs MCTS', linewidth=2)
+            ax5.plot(iterations, self.evaluation_data['value_vs_minimax_depth_2'], 'r--', label='vs Minimax D2', linewidth=2)
+            ax5.plot(iterations, self.evaluation_data['value_vs_minimax_depth_3'], 'r-.', label='vs Minimax D3', linewidth=2)
+            ax5.plot(iterations, self.evaluation_data['value_vs_minimax_depth_4'], 'r:', label='vs Minimax D4', linewidth=2)
+            ax5.plot(iterations, self.evaluation_data['value_vs_mcts'], 'g-', label='vs MCTS', linewidth=2)
             ax5.set_title('Value Network Performance')
             ax5.set_xlabel('Iteration')
             ax5.set_ylabel('Win Rate')
@@ -1364,15 +1454,19 @@ class WorkingDashboard:
             if len(iterations) > 0:
                 latest_idx = -1
                 policy_random = self.evaluation_data['policy_win_rates'][latest_idx]
-                policy_minimax = self.evaluation_data['policy_vs_minimax'][latest_idx]
+                policy_minimax_d2 = self.evaluation_data['policy_vs_minimax_depth_2'][latest_idx]
+                policy_minimax_d3 = self.evaluation_data['policy_vs_minimax_depth_3'][latest_idx]
+                policy_minimax_d4 = self.evaluation_data['policy_vs_minimax_depth_4'][latest_idx]
                 policy_mcts = self.evaluation_data['policy_vs_mcts'][latest_idx]
                 value_random = self.evaluation_data['value_win_rates'][latest_idx]
-                value_minimax = self.evaluation_data['value_vs_minimax'][latest_idx]
+                value_minimax_d2 = self.evaluation_data['value_vs_minimax_depth_2'][latest_idx]
+                value_minimax_d3 = self.evaluation_data['value_vs_minimax_depth_3'][latest_idx]
+                value_minimax_d4 = self.evaluation_data['value_vs_minimax_depth_4'][latest_idx]
                 value_mcts = self.evaluation_data['value_vs_mcts'][latest_idx]
                 
-                agents = ['vs Random', 'vs Minimax', 'vs MCTS']
-                policy_scores = [policy_random, policy_minimax, policy_mcts]
-                value_scores = [value_random, value_minimax, value_mcts]
+                agents = ['vs Random', 'vs Minimax D2', 'vs Minimax D3', 'vs Minimax D4', 'vs MCTS']
+                policy_scores = [policy_random, policy_minimax_d2, policy_minimax_d3, policy_minimax_d4, policy_mcts]
+                value_scores = [value_random, value_minimax_d2, value_minimax_d3, value_minimax_d4, value_mcts]
                 
                 x = np.arange(len(agents))
                 width = 0.35
@@ -1444,17 +1538,29 @@ class WorkingDashboard:
             
             if self.evaluation_data['policy_win_rates']:
                 latest_policy_random = self.evaluation_data['policy_win_rates'][-1]
-                latest_policy_minimax = self.evaluation_data['policy_vs_minimax'][-1]
+                latest_policy_minimax_d2 = self.evaluation_data['policy_vs_minimax_depth_2'][-1]
+                latest_policy_minimax_d3 = self.evaluation_data['policy_vs_minimax_depth_3'][-1]
+                latest_policy_minimax_d4 = self.evaluation_data['policy_vs_minimax_depth_4'][-1]
+                latest_policy_mcts = self.evaluation_data['policy_vs_mcts'][-1]
                 stats += f"Policy Network (Latest):\n"
                 stats += f"  vs Random: {latest_policy_random:.2%}\n"
-                stats += f"  vs Minimax: {latest_policy_minimax:.2%}\n\n"
+                stats += f"  vs Minimax Depth 2: {latest_policy_minimax_d2:.2%}\n"
+                stats += f"  vs Minimax Depth 3: {latest_policy_minimax_d3:.2%}\n"
+                stats += f"  vs Minimax Depth 4: {latest_policy_minimax_d4:.2%}\n"
+                stats += f"  vs MCTS: {latest_policy_mcts:.2%}\n\n"
             
             if self.evaluation_data['value_win_rates']:
                 latest_value_random = self.evaluation_data['value_win_rates'][-1]
-                latest_value_minimax = self.evaluation_data['value_vs_minimax'][-1]
+                latest_value_minimax_d2 = self.evaluation_data['value_vs_minimax_depth_2'][-1]
+                latest_value_minimax_d3 = self.evaluation_data['value_vs_minimax_depth_3'][-1]
+                latest_value_minimax_d4 = self.evaluation_data['value_vs_minimax_depth_4'][-1]
+                latest_value_mcts = self.evaluation_data['value_vs_mcts'][-1]
                 stats += f"Value Network (Latest):\n"
                 stats += f"  vs Random: {latest_value_random:.2%}\n"
-                stats += f"  vs Minimax: {latest_value_minimax:.2%}\n\n"
+                stats += f"  vs Minimax Depth 2: {latest_value_minimax_d2:.2%}\n"
+                stats += f"  vs Minimax Depth 3: {latest_value_minimax_d3:.2%}\n"
+                stats += f"  vs Minimax Depth 4: {latest_value_minimax_d4:.2%}\n"
+                stats += f"  vs MCTS: {latest_value_mcts:.2%}\n\n"
             
             stats += f"Iterations Completed: {len(self.evaluation_data['iterations'])}\n\n"
         

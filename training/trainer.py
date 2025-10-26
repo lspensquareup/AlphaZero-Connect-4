@@ -9,6 +9,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from typing import List, Tuple, Dict, Optional
 from collections import deque
@@ -80,7 +81,8 @@ class Trainer:
         
         # Setup optimizer and loss function
         optimizer = optim.Adam(network.parameters(), lr=learning_rate)
-        criterion = nn.CrossEntropyLoss()
+        # Use KL divergence for soft probability targets
+        criterion = nn.KLDivLoss(reduction='batchmean')
         
         network.train()
         epoch_losses = []
@@ -93,16 +95,22 @@ class Trainer:
             for i in range(0, len(training_data), batch_size):
                 batch = training_data[i:i + batch_size]
                 
-                # Prepare batch data
-                boards = torch.FloatTensor([item[0] for item in batch]).to(device)
-                target_probs = torch.FloatTensor([item[1] for item in batch]).to(device)
+                # Prepare batch data efficiently
+                boards_list = [item[0] for item in batch]
+                target_probs_list = [item[1] for item in batch]
+                
+                boards = torch.FloatTensor(np.array(boards_list)).to(device)
+                target_probs = torch.FloatTensor(np.array(target_probs_list)).to(device)
                 
                 # Forward pass
                 optimizer.zero_grad()
                 predicted_logits = network(boards)
                 
-                # Calculate loss
-                loss = criterion(predicted_logits, target_probs)
+                # Convert logits to log probabilities for KL divergence
+                predicted_log_probs = F.log_softmax(predicted_logits, dim=1)
+                
+                # Calculate KL divergence loss
+                loss = criterion(predicted_log_probs, target_probs)
                 
                 # Backward pass
                 loss.backward()
@@ -169,9 +177,12 @@ class Trainer:
             for i in range(0, len(training_data), batch_size):
                 batch = training_data[i:i + batch_size]
                 
-                # Prepare batch data
-                boards = torch.FloatTensor([item[0] for item in batch]).to(device)
-                target_values = torch.FloatTensor([[item[1]] for item in batch]).to(device)
+                # Prepare batch data efficiently  
+                boards_list = [item[0] for item in batch]
+                target_values_list = [[item[1]] for item in batch]
+                
+                boards = torch.FloatTensor(np.array(boards_list)).to(device)
+                target_values = torch.FloatTensor(np.array(target_values_list)).to(device)
                 
                 # Forward pass
                 optimizer.zero_grad()
@@ -224,9 +235,12 @@ class Trainer:
             winner = game.get('winner', 0)
             
             for i, (board_state, action) in enumerate(zip(board_states, actions)):
-                # Create action probability vector (one-hot for supervised learning)
-                action_probs = np.zeros(7)
-                action_probs[action] = 1.0
+                # Create softened action probability vector instead of one-hot
+                action_probs = np.ones(7) * 0.05  # Small baseline probability for exploration
+                action_probs[action] = 0.65  # Main action gets 65% probability
+                
+                # Normalize to ensure it sums to 1.0
+                action_probs = action_probs / action_probs.sum()
                 
                 # Calculate value based on game outcome and current player
                 current_player = 1 if i % 2 == 0 else -1
